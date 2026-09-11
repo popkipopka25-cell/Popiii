@@ -111,12 +111,11 @@ def main_menu_keyboard():
 
 def category_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Мальчик · Общение", callback_data="cat_male_comm"),
-         InlineKeyboardButton(text="Мальчик · Поддержка", callback_data="cat_male_support")],
-        [InlineKeyboardButton(text="Девочка · Общение", callback_data="cat_female_comm"),
-         InlineKeyboardButton(text="Девочка · Поддержка", callback_data="cat_female_support")],
-        [InlineKeyboardButton(text="Любой · Общение", callback_data="cat_any_comm"),
-         InlineKeyboardButton(text="Любой · Поддержка", callback_data="cat_any_support")]
+        [InlineKeyboardButton(text="Мальчик", callback_data="cat_male"),
+         InlineKeyboardButton(text="Девочка", callback_data="cat_female")],
+        [InlineKeyboardButton(text="Общение", callback_data="cat_comm"),
+         InlineKeyboardButton(text="Поддержка", callback_data="cat_support")],
+        [InlineKeyboardButton(text="Любой", callback_data="cat_any")]
     ])
 
 def rating_keyboard():
@@ -290,8 +289,7 @@ async def cmd_help(message: Message):
         "/clear - сбросить все данные (осторожно!)\n"
         "/broadcast <текст> - разослать сообщение всем пользователям\n\n"
         "Сообщения без // пересылаются пользователю.\n"
-        "Сообщения с // остаются в теме как заметки.\n"
-        "Поддерживаются любые типы сообщений: текст, голос, фото, видео, стикеры."
+        "Сообщения с // остаются в теме как заметки."
     )
     await message.answer(help_text)
 
@@ -635,7 +633,6 @@ async def handle_user_message(message: Message, state: FSMContext):
         await message.answer("Вы заблокированы и не можете отправлять сообщения.")
         return
 
-    # --- Reply-кнопки ---
     if message.text == "👤 Выбрать админа":
         await show_admin_buttons(message)
         return
@@ -646,7 +643,6 @@ async def handle_user_message(message: Message, state: FSMContext):
         await message.answer(RULES_TEXT)
         return
 
-    # --- Если диалог не начат ---
     if user_id not in user_topics:
         text = message.text or ""
         if is_greeting(text):
@@ -794,24 +790,17 @@ async def process_category_selected(callback: CallbackQuery):
 
     type_comm = None
     admin_gender = None
-    if cat == "male_comm":
+    if cat == "male":
         admin_gender = "Мальчик"
-        type_comm = "Общение"
-    elif cat == "male_support":
-        admin_gender = "Мальчик"
-        type_comm = "Поддержка"
-    elif cat == "female_comm":
+    elif cat == "female":
         admin_gender = "Девочка"
+    elif cat == "comm":
         type_comm = "Общение"
-    elif cat == "female_support":
-        admin_gender = "Девочка"
+    elif cat == "support":
         type_comm = "Поддержка"
-    elif cat == "any_comm":
-        admin_gender = "Любой"
+    elif cat == "any":
         type_comm = "Общение"
-    elif cat == "any_support":
         admin_gender = "Любой"
-        type_comm = "Поддержка"
 
     topic = await bot.create_forum_topic(chat_id=GROUP_ID, name=f"{username}")
     topic_id = topic.message_thread_id
@@ -823,8 +812,8 @@ async def process_category_selected(callback: CallbackQuery):
         f"🆕 Новый запрос!\n"
         f"👤 Имя: {callback.from_user.full_name}\n"
         f"🔖 Username: @{callback.from_user.username or 'нет'}\n"
-        f"📌 Тип: {type_comm}\n"
-        f"🚻 Предпочтительный пол админа: {admin_gender}\n\n"
+        f"📌 Тип: {type_comm or 'Не указан'}\n"
+        f"🚻 Предпочтительный пол админа: {admin_gender or 'Не указан'}\n\n"
         f"Начинайте общение. Сообщения без // будут отправлены пользователю."
     )
     await bot.send_message(GROUP_ID, info, message_thread_id=topic_id, reply_markup=get_keyboard(user_id, read=False))
