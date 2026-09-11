@@ -28,6 +28,7 @@ PRESET_ADMIN_TAGS = {
     5934330035: "#линг",
     5305234519: "#призрак",
     2087257865: "#чапа",
+    8920606957: "#лирика",
     6354283893: "#киса",
 }
 PRESET_ADMIN_ROLES = {
@@ -37,6 +38,7 @@ PRESET_ADMIN_ROLES = {
     5934330035: "адм.универсал",
     5305234519: "адм.универсал",
     2087257865: "Адм.инженер.сов.влд//общение",
+    8920606957: "адм.универсал",
     6354283893: "Сов.влд",
 }
 
@@ -109,11 +111,12 @@ def main_menu_keyboard():
 
 def category_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Мальчик", callback_data="cat_male"),
-         InlineKeyboardButton(text="Девочка", callback_data="cat_female")],
-        [InlineKeyboardButton(text="Общение", callback_data="cat_comm"),
-         InlineKeyboardButton(text="Поддержка", callback_data="cat_support")],
-        [InlineKeyboardButton(text="Любой", callback_data="cat_any")]
+        [InlineKeyboardButton(text="Мальчик · Общение", callback_data="cat_male_comm"),
+         InlineKeyboardButton(text="Мальчик · Поддержка", callback_data="cat_male_support")],
+        [InlineKeyboardButton(text="Девочка · Общение", callback_data="cat_female_comm"),
+         InlineKeyboardButton(text="Девочка · Поддержка", callback_data="cat_female_support")],
+        [InlineKeyboardButton(text="Любой · Общение", callback_data="cat_any_comm"),
+         InlineKeyboardButton(text="Любой · Поддержка", callback_data="cat_any_support")]
     ])
 
 def rating_keyboard():
@@ -788,17 +791,24 @@ async def process_category_selected(callback: CallbackQuery):
 
     type_comm = None
     admin_gender = None
-    if cat == "male":
+    if cat == "male_comm":
         admin_gender = "Мальчик"
-    elif cat == "female":
-        admin_gender = "Девочка"
-    elif cat == "comm":
         type_comm = "Общение"
-    elif cat == "support":
+    elif cat == "male_support":
+        admin_gender = "Мальчик"
         type_comm = "Поддержка"
-    elif cat == "any":
+    elif cat == "female_comm":
+        admin_gender = "Девочка"
         type_comm = "Общение"
+    elif cat == "female_support":
+        admin_gender = "Девочка"
+        type_comm = "Поддержка"
+    elif cat == "any_comm":
         admin_gender = "Любой"
+        type_comm = "Общение"
+    elif cat == "any_support":
+        admin_gender = "Любой"
+        type_comm = "Поддержка"
 
     topic = await bot.create_forum_topic(chat_id=GROUP_ID, name=f"{username}")
     topic_id = topic.message_thread_id
@@ -810,8 +820,8 @@ async def process_category_selected(callback: CallbackQuery):
         f"🆕 Новый запрос!\n"
         f"👤 Имя: {callback.from_user.full_name}\n"
         f"🔖 Username: @{callback.from_user.username or 'нет'}\n"
-        f"📌 Тип: {type_comm or 'Не указан'}\n"
-        f"🚻 Предпочтительный пол админа: {admin_gender or 'Не указан'}\n\n"
+        f"📌 Тип: {type_comm}\n"
+        f"🚻 Предпочтительный пол админа: {admin_gender}\n\n"
         f"Начинайте общение. Сообщения без // будут отправлены пользователю."
     )
     await bot.send_message(GROUP_ID, info, message_thread_id=topic_id, reply_markup=get_keyboard(user_id, read=False))
