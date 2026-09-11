@@ -674,9 +674,7 @@ async def handle_user_message(message: Message, state: FSMContext):
                 await message.answer("Произошла ошибка. Попробуй позже.")
         else:
             await message.answer("Пожалуйста, укажи категорию и пол админа, например: «привет поддержка мальчик».\nИли используй кнопки /start.")
-        return
-
-    topic_id = user_topics[user_id]
+        return    topic_id = user_topics[user_id]
 
     async def send_media_to_topic(target_topic_id):
         if message.voice:
@@ -848,17 +846,24 @@ async def process_comment(message: Message, state: FSMContext):
     await message.answer("Спасибо за оценку!")
     await state.clear()
 
-@dp.message(F.chat.id == GROUP_ID, F.message_thread_id.is_not(None))
+# ---------- Обработка сообщений из тем (админы) ----------
+@dp.message(F.chat.id == GROUP_ID)
 async def handle_admin_message(message: Message):
-    if message.from_user.is_bot or message.is_topic_message is False:
+    # Игнорируем команды, сообщения от ботов, служебные
+    if message.from_user is None or message.from_user.is_bot:
         return
     if message.text and message.text.startswith('/'):
         return
+    # Если нет темы — это общий чат, игнорируем
+    if not message.message_thread_id:
+        return
+
     topic_id = message.message_thread_id
     user_id = next((uid for uid, tid in user_topics.items() if tid == topic_id), None)
     if user_id is None:
         return
 
+    # Внутренние заметки не пересылаем
     if message.text and message.text.startswith("//"):
         return
 
@@ -884,9 +889,11 @@ async def handle_admin_message(message: Message):
     except Exception as e:
         logging.error(f"Не удалось отправить сообщение пользователю {user_id}: {e}")
 
-@dp.edited_message(F.chat.id == GROUP_ID, F.message_thread_id.is_not(None))
+@dp.edited_message(F.chat.id == GROUP_ID)
 async def handle_admin_edited_message(message: Message):
-    if message.from_user.is_bot:
+    if message.from_user is None or message.from_user.is_bot:
+        return
+    if not message.message_thread_id:
         return
     topic_id = message.message_thread_id
     user_id = next((uid for uid, tid in user_topics.items() if tid == topic_id), None)
