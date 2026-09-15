@@ -34,7 +34,7 @@ JSONBLOB_URL = os.getenv("JSONBLOB_URL", "")
 ADMIN_TAGS_ENV = os.getenv("ADMIN_TAGS", "")
 ADMIN_ROLES_ENV = os.getenv("ADMIN_ROLES", "")
 
-# Обновлённый список админов
+# === ОБНОВЛЁННЫЙ СПИСОК АДМИНОВ ===
 PRESET_ADMIN_TAGS = {
     7790900154: "#Серафим",
     6354283893: "#Киса",
@@ -86,10 +86,7 @@ class ReportStates(StatesGroup):
     waiting_for_text = State()
 
 
-WELCOME_TEXT = (
-    "Привет! 👋\n\n"
-    "Выбери, кем ты хочешь стать или как хочешь пообщаться."
-)
+WELCOME_TEXT = "Привет! Выбери, что хочешь сделать."
 
 RULES_TEXT = (
     "Правила общения:\n"
@@ -217,7 +214,7 @@ async def load_data():
                         admin_roles = {int(k): v for k, v in data.get("admin_roles", {}).items()}
                         read_status = {int(k): v for k, v in data.get("read_status", {}).items()}
         except Exception as e:
-            logging.error(f"Ошибка загрузки из JsonBlob: {e}")
+            logging.error(f"Ошибка загрузки: {e}")
 
     owners.update(OWNER_IDS)
 
@@ -647,17 +644,23 @@ async def process_category_selected(callback: CallbackQuery):
     type_comm = None
     admin_gender = None
     if cat == "male_comm":
-        admin_gender = "Мальчик"; type_comm = "Общение"
+        admin_gender = "Мальчик"
+        type_comm = "Общение"
     elif cat == "male_support":
-        admin_gender = "Мальчик"; type_comm = "Поддержка"
+        admin_gender = "Мальчик"
+        type_comm = "Поддержка"
     elif cat == "female_comm":
-        admin_gender = "Девочка"; type_comm = "Общение"
+        admin_gender = "Девочка"
+        type_comm = "Общение"
     elif cat == "female_support":
-        admin_gender = "Девочка"; type_comm = "Поддержка"
+        admin_gender = "Девочка"
+        type_comm = "Поддержка"
     elif cat == "any_comm":
-        admin_gender = "Любой"; type_comm = "Общение"
+        admin_gender = "Любой"
+        type_comm = "Общение"
     elif cat == "any_support":
-        admin_gender = "Любой"; type_comm = "Поддержка"
+        admin_gender = "Любой"
+        type_comm = "Поддержка"
 
     topic = await bot.create_forum_topic(chat_id=GROUP_ID, name=f"{username}")
     topic_id = topic.message_thread_id
@@ -730,7 +733,10 @@ async def process_block(callback: CallbackQuery):
         await bot.send_message(user_id, "Вы заблокированы.")
     except Exception:
         pass
-    await callback.message.edit_text(callback.message.text + "\n\nЗаблокирован", reply_markup=get_keyboard(user_id))
+    await callback.message.edit_text(
+        callback.message.text + "\n\nЗаблокирован",
+        reply_markup=get_keyboard(user_id),
+    )
     await callback.answer("Заблокирован")
 
 
@@ -783,7 +789,10 @@ async def process_read(callback: CallbackQuery):
     lines = callback.message.text.split("\n")
     while lines and lines[-1] in ("Прочитано", "Точно разблокировать?"):
         lines.pop()
-    await callback.message.edit_text("\n".join(lines) + "\n\nПрочитано", reply_markup=get_keyboard(user_id, read=True))
+    await callback.message.edit_text(
+        "\n".join(lines) + "\n\nПрочитано",
+        reply_markup=get_keyboard(user_id, read=True),
+    )
     await callback.answer("Прочитано")
 
 
@@ -793,7 +802,7 @@ async def process_unread(callback: CallbackQuery):
     read_status[user_id] = False
     await save_data()
     lines = callback.message.text.split("\n")
-    while lines and lines[-1] in ("Прочитано",):
+    while lines and lines[-1] == "Прочитано":
         lines.pop()
     await callback.message.edit_text("\n".join(lines), reply_markup=get_keyboard(user_id, read=False))
     await callback.answer("Отменено")
