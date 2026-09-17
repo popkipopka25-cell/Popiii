@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import random
 import aiohttp
 from datetime import datetime, timedelta
 
@@ -21,6 +22,8 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiohttp import web
 
 
+# ================== КОНФИГ ==================
+
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GROUP_ID = int(os.getenv("GROUP_ID", "0").split()[0])
 PORT = int(os.getenv("PORT", 10000))
@@ -37,16 +40,18 @@ ADMIN_TAGS_ENV = os.getenv("ADMIN_TAGS", "")
 ADMIN_ROLES_ENV = os.getenv("ADMIN_ROLES", "")
 
 
+# ================== АДМИНЫ ==================
+
 PRESET_ADMIN_TAGS = {
     7790900154: "#Серафим",
     6354283893: "#Киса",
-    2087257865: "#чапа",
+    2087257865: "#Чапа",
     8275375761: "#лютик",
     8790245480: "#падшая",
     6870680424: "#цена",
-    5812572110: "#темная",
+    5812572110: "#Темная",
     6698192304: "#минерва",
-    6599739238: "#мадока",
+    6599739238: "#Мадока",
 }
 
 PRESET_ADMIN_ROLES = {
@@ -62,17 +67,212 @@ PRESET_ADMIN_ROLES = {
 }
 
 ADMIN_GREETINGS = {
-    7790900154: "Привет, солнце! Я Серафим, готова помочь. Расскажи, что случилось 🤍",
-    6354283893: "Привет! Я Киса, слушаю тебя. Что тревожит?",
-    2087257865: "Привет! На связи Чапа. Чем помочь?",
-    8275375761: "Приветик! Я Лютик. Давай поболтаем 🌸",
-    8790245480: "Привет! Я Падшая, готова выслушать.",
-    6870680424: "Привет. Я Цена. Что у тебя случилось?",
-    5812572110: "Привет… Я Тёмная. Можешь рассказать всё, что на душе.",
-    6698192304: "Привет! Минерва на связи. Расскажи, что тебя беспокоит.",
-    6599739238: "Привет! Я Мадока. Готова помочь, пиши.",
+    6599739238: (
+        "когда нам грустно, бог посылает на землю ангела-человека, "
+        "который придёт и вытрет наши слёзы\n#мадока\n\n"
+        "Отзывы: https://t.me/ooih865\n"
+        "ТГК: http://t.me/Yasu737\n"
+        "Анкетница: @Anketka65_bot"
+    ),
+    5812572110: (
+        "🖤 Привет! Ты находишься в чате у Тёмной.\n\n"
+        "Рада видеть тебя здесь! Можешь спокойно рассказать о том, что тебя беспокоит, "
+        "поделиться своими мыслями или просто пообщаться.\n\n"
+        "Не бойся задавать вопросы — здесь тебя выслушают без лишних осуждений. 💬\n\n"
+        "✨ Как у тебя дела сегодня?\n— Тёмная"
+    ),
+    7790900154: (
+        "#Серафим\n\n"
+        "Ты стоишь у черты, где прошлое шепчет вслед,\n"
+        "а впереди — только ветер и новый путь.\n\n"
+        "Не оглядывайся: там больше нет твоего пути.\n"
+        "Смотри только вперёд — туда, где небо шире.\n\n"
+        "Ты уже по ту сторону. И это — начало чего-то настоящего.\n\n"
+        "— Отзывы: https://t.me/ooih865\n— ТГК: https://t.me/Yasu737"
+    ),
+    2087257865: (
+        "👑 Вы написали Царю-Чапике! 👑\n\n"
+        "В начале разговора, припадите на колено и произнесите:\n"
+        "«Здравствуй, надёжа-государь, свет наш и заступник!»\n\n"
+        "Если вы хотите призвать великого Чапика, напишите:\n"
+        "«о великий чапа яви себя #Чапа»"
+    ),
 }
 
+
+# ================== ФАКТЫ ПРО ЖИВОТНЫХ ==================
+
+FACTS = {
+    "cat": [
+        "Кошки мурлыкают на частоте 25–150 Гц — это помогает заживлению тканей.",
+        "У кота потеют только подушечки лап.",
+        "Кошки спят 12–16 часов в сутки.",
+        "Нос кота уникален, как отпечаток пальца.",
+        "Кошки видят в темноте в 6 раз лучше человека.",
+        "Усы помогают коту ориентироваться в пространстве.",
+        "Кошки не чувствуют сладкий вкус.",
+        "Сердце кошки бьётся в 2 раза быстрее человеческого.",
+        "Кошка может прыгнуть в 6 раз выше своего роста.",
+        "Мурлыканье кошки снижает стресс у человека.",
+        "Кошки узнают своё имя, но часто игнорируют его.",
+        "У кошки 230 костей — больше, чем у человека.",
+        "Группа кошек называется «клоудер».",
+        "Самый старый кот прожил 38 лет.",
+        "Кошки издают около 100 разных звуков.",
+    ],
+    "dog": [
+        "У собак 18 мышц в каждом ухе.",
+        "Собаки видят сны.",
+        "Отпечаток носа собаки уникален.",
+        "Собаки различают до 250 слов.",
+        "Собаки потеют через подушечки лап.",
+        "У собак 3 века на каждом глазу.",
+        "Самая старая собака прожила 29 лет.",
+        "Собаки чувствуют запахи в 10 000 раз лучше людей.",
+        "Далматины рождаются без пятен.",
+        "Собаки спят 12–14 часов.",
+        "Акита-ину — символ верности в Японии.",
+        "Собаки помогают лечить депрессию (канистерапия).",
+    ],
+    "panda": [
+        "Панды едят до 38 кг бамбука в день.",
+        "Панды рождаются розовыми и слепыми.",
+        "Детёныш панды весит около 100 грамм.",
+        "Панды спят 10–16 часов в день.",
+        "Большая панда — символ WWF.",
+        "У панд 6 пальцев — «большой палец» помогает держать бамбук.",
+        "Панды не впадают в спячку.",
+        "Всего в мире около 1800 панд.",
+        "Панда весит до 150 кг.",
+    ],
+    "fox": [
+        "Лисы — единственные псовые, которые живут в норах.",
+        "Лиса слышит мышь под 1 метром снега.",
+        "У лисы 28 зубов.",
+        "Хвост лисы помогает держать равновесие.",
+        "Лиса бежит до 50 км/ч.",
+        "Песец — арктическая лиса, зимой белеет.",
+        "Лисы чистят мех лапами, как кошки.",
+    ],
+    "wolf": [
+        "Волки живут стаями по 6–10 особей.",
+        "Волчий вой слышен на 10 км.",
+        "Волки бегают до 60 км/ч.",
+        "Волки моногамны — пара на всю жизнь.",
+        "У волка 42 зуба.",
+        "Волки легко переносят морозы до -40 °C.",
+        "Волки — предки домашних собак.",
+    ],
+    "lion": [
+        "Львы спят до 20 часов в сутки.",
+        "Львицы охотятся чаще самцов.",
+        "Львиный рык слышен на 8 км.",
+        "Львы живут прайдами.",
+        "Львы развивают скорость до 80 км/ч.",
+    ],
+    "tiger": [
+        "Тигриные полосы уникальны, как отпечатки пальцев.",
+        "Тигры — лучшие пловцы среди кошачьих.",
+        "Тигр может прыгнуть на 6 метров.",
+        "Белые тигры — не альбиносы, а особая мутация.",
+        "Тигр любит воду и часто купается.",
+    ],
+    "elephant": [
+        "Слоны — самые крупные наземные животные.",
+        "Слоны узнают себя в зеркале.",
+        "Слоны общаются инфразвуком.",
+        "Слон ест до 200 кг в день.",
+        "Беременность слонихи — 22 месяца.",
+        "Слоны живут до 70 лет.",
+    ],
+    "dolphin": [
+        "Дельфины спят половинкой мозга.",
+        "Дельфины общаются щелчками и свистом.",
+        "Дельфины развивают скорость до 60 км/ч.",
+        "Дельфины заботятся о больных сородичах.",
+        "Дельфины ныряют до 300 метров.",
+    ],
+    "bird": [
+        "Птицы — единственные животные с перьями.",
+        "Колибри — единственная птица, летающая назад.",
+        "Совы поворачивают голову до 270°.",
+        "Альбатрос может летать без посадки годами.",
+        "Пингвины отлично плавают, но не летают.",
+        "Попугаи понимают смысл слов.",
+    ],
+    "insect": [
+        "Пчёлы общаются танцем.",
+        "Божья коровка съедает до 50 тлей в день.",
+        "Кузнечик слышит ногами.",
+        "Стрекоза — самое быстрое насекомое.",
+        "Бабочки пробуют вкус ногами.",
+        "Муравей может поднять в 50 раз больше себя.",
+    ],
+    "sea": [
+        "Осьминог имеет 3 сердца.",
+        "У осьминога голубая кровь.",
+        "Медузы на 95% состоят из воды.",
+        "Кит — самое крупное животное на планете.",
+        "Морская звезда может отрастить утраченный луч.",
+        "Акулы существуют дольше деревьев.",
+        "Морской конёк — самец вынашивает детей.",
+    ],
+}
+
+ANIMAL_TITLES = {
+    "cat": "🐱 Коты",
+    "dog": "🐶 Собаки",
+    "panda": "🐼 Панды",
+    "fox": "🦊 Лисы",
+    "wolf": "🐺 Волки",
+    "lion": "🦁 Львы",
+    "tiger": "🐯 Тигры",
+    "elephant": "🐘 Слоны",
+    "dolphin": "🐬 Дельфины",
+    "bird": "🐦 Птицы",
+    "insect": "🐜 Насекомые",
+    "sea": "🌊 Морские обитатели",
+}
+
+
+# ================== ФАКТЫ ПРО ПРИРОДУ ==================
+
+NATURE_FACTS = [
+    "Деревья общаются через корни и грибницу (Wood Wide Web).",
+    "Бамбук может вырасти на 90 см за сутки.",
+    "Самая старая сосна живёт более 5000 лет.",
+    "Молния бьёт в землю 100 раз в секунду.",
+    "Радуга — это отражение света в каплях воды.",
+    "Снежинки бывают 35 типов.",
+    "Самая высокая гора — Эверест (8848 м).",
+    "Амазонка даёт 20% кислорода Земли.",
+    "Земля вращается со скоростью 1670 км/ч.",
+    "Облако весит как 100 слонов.",
+    "Самая солёная вода — в Мёртвом море.",
+    "Лес снижает уровень стресса у человека.",
+    "В Байкале 20% всей пресной воды мира.",
+    "Полярное сияние возникает из-за солнечного ветра.",
+    "Гроза может быть слышна за 30 км.",
+    "Туман — это облако у земли.",
+    "Лава в вулкане горячее 1000 °C.",
+    "Самый большой водопад — Анхель (979 м).",
+    "Коралловые рифы — живые организмы.",
+    "Мхи выживают в Антарктиде.",
+    "Вулканы питают почву.",
+    "Океан занимает 70% планеты.",
+    "Воздух на 78% состоит из азота.",
+    "Тихий океан больше всей суши вместе.",
+    "Деревья выделяют фитонциды — убивают бактерии.",
+    "Полярные медведи покрыты прозрачным мехом.",
+    "Земля — единственная планета с жидкой водой.",
+    "Один дуб даёт 50 000 жёлудей за жизнь.",
+    "Янтарь — это окаменевшая смола древних деревьев.",
+    "Океан поглощает 30% CO₂.",
+    "Снег на 90% состоит из воздуха.",
+]
+
+
+# ================== ИНИЦИАЛИЗАЦИЯ ==================
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
@@ -91,9 +291,10 @@ admin_tags = {}
 admin_roles = {}
 read_status = {}
 
-reminders = {}       # topic_id -> {"admin_id": int|None, "answered": bool, "task": Task}
-frozen_topics = {}   # topic_id -> True
-topic_history = {}   # topic_id -> [message_id]
+reminders = {}
+frozen_topics = {}
+topic_history = {}
+waiting_admin_replied = {}   # user_id -> True/False (ответил ли админ)
 
 
 class RateStates(StatesGroup):
@@ -108,19 +309,21 @@ class ChangeStates(StatesGroup):
     confirm = State()
 
 
+class GuessGameState(StatesGroup):
+    waiting_number = State()
+
+
 WELCOME_TEXT = (
-    "🌙 Врата распахнулись — и в этот секунд время будто замедлило бег, чтобы осмотреть бережно встретить тебя. 🌙\n\n"
-    "🕊 «Что случилось, ангелочек мой?» — этот вопрос здесь не для галочки. Мы спрашиваем, потому что правда хотим услышать твой ответ — будь то тяжелый вздох, сбивчивый рассказ или просто тихое «день был странный».\n\n"
-    "💭 Может, ты пришёл, потому что плечи уже не держат весь этот груз, и сейчас хочется, чтобы кто-то просто сказал: «я тут, я слушаю». А может, день был таким светлым, что эмоции переливаются через край — и их нужно кому-то отдать, чтобы они не растаяли в тишине.\n\n"
-    "💖 Мы искренне рады, что ты выбрал именно этот уголок.\n\n"
+    "🌙 Врата распахнулись — и этот секунд будто замедлил бег.\n\n"
+    "🕊 «Что случилось, ангелочек мой?» — этот вопрос здесь не для галочки.\n\n"
+    "💭 Здесь можно выговориться, отвлечься или просто помолчать рядом.\n\n"
     "📬 Канал: https://t.me/Yasu737\n"
     "💬 Отзывы: https://t.me/ooih865\n\n"
     "📝 Напиши тег админа и цель: «общение» или «поддержка»."
 )
 
 RULES_TEXT = (
-    "⚡️⚡️⚡️⚡️⚡️⚡️⚡️\n"
-    "Правила общения:\n"
+    "⚡️ Правила общения:\n"
     "1. Будь вежлив.\n"
     "2. Не спамь.\n"
     "3. Уважай других.\n"
@@ -132,8 +335,8 @@ RULES_TEXT = (
 def main_menu_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="👤 Выбрать админа"), KeyboardButton(text="📂 Выбрать категорию")],
-            [KeyboardButton(text="📜 Правила общения")],
+            [KeyboardButton(text="🤍 Позвать хранителя"), KeyboardButton(text="🌸 Поболтать")],
+            [KeyboardButton(text="📜 Правила")],
         ],
         resize_keyboard=True,
     )
@@ -199,12 +402,85 @@ def get_confirm_keyboard(user_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="✅ Да, разблокировать", callback_data=f"confirm_unblock:{user_id}"),
+                InlineKeyboardButton(text="✅ Да", callback_data=f"confirm_unblock:{user_id}"),
                 InlineKeyboardButton(text="❌ Нет", callback_data=f"cancel_unblock:{user_id}"),
             ]
         ]
     )
 
+
+def waiting_menu_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🐾 Узнать факты про животных", callback_data="w_animals")],
+            [InlineKeyboardButton(text="🌿 Узнать факты про природу", callback_data="w_nature")],
+            [InlineKeyboardButton(text="🎮 Поиграть в мини-игру", callback_data="w_games")],
+        ]
+    )
+
+
+def animals_submenu_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🐱 Про котов", callback_data="a_cat"),
+             InlineKeyboardButton(text="🐶 Про собак", callback_data="a_dog")],
+            [InlineKeyboardButton(text="🐼 Про панд", callback_data="a_panda"),
+             InlineKeyboardButton(text="🦊 Про лис", callback_data="a_fox")],
+            [InlineKeyboardButton(text="🐺 Про волков", callback_data="a_wolf"),
+             InlineKeyboardButton(text="🦁 Про львов", callback_data="a_lion")],
+            [InlineKeyboardButton(text="🐯 Про тигров", callback_data="a_tiger"),
+             InlineKeyboardButton(text="🐘 Про слонов", callback_data="a_elephant")],
+            [InlineKeyboardButton(text="🐬 Про дельфинов", callback_data="a_dolphin"),
+             InlineKeyboardButton(text="🐦 Про птиц", callback_data="a_bird")],
+            [InlineKeyboardButton(text="🐜 Про насекомых", callback_data="a_insect"),
+             InlineKeyboardButton(text="🌊 Про морских", callback_data="a_sea")],
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="w_back")],
+        ]
+    )
+
+
+def games_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🎲 Кубик", callback_data="g_dice"),
+             InlineKeyboardButton(text="🪙 Монетка", callback_data="g_coin")],
+            [InlineKeyboardButton(text="✊✋✌️ Камень-ножницы-бумага", callback_data="g_rps")],
+            [InlineKeyboardButton(text="🔢 Угадай число", callback_data="g_guess")],
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="w_back")],
+        ]
+    )
+
+
+def rps_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="✊ Камень", callback_data="rps_rock"),
+             InlineKeyboardButton(text="✋ Бумага", callback_data="rps_paper"),
+             InlineKeyboardButton(text="✌️ Ножницы", callback_data="rps_scissors")],
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="w_back")],
+        ]
+    )
+
+
+def more_fact_keyboard(sub: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🔁 Ещё факт", callback_data=f"more_{sub}")],
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="w_animals")],
+        ]
+    )
+
+
+def more_nature_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🔁 Ещё факт", callback_data="more_nature")],
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="w_back")],
+        ]
+    )
+
+
+# ================== УТИЛИТЫ ==================
 
 def is_owner(user_id: int) -> bool:
     return user_id in owners
@@ -236,7 +512,6 @@ def parse_request(text: str):
         type_comm = "Поддержка"
     elif "общение" in low or "#общение" in low:
         type_comm = "Общение"
-
     admin_gender = None
     if "мальчик" in low or "#мальчик" in low:
         admin_gender = "Мальчик"
@@ -256,7 +531,7 @@ def is_greeting(text: str) -> bool:
     return False
 
 
-# ================== Напоминание ==================
+# ================== НАПОМИНАНИЕ ==================
 
 async def reminder_loop(topic_id: int):
     try:
@@ -271,14 +546,13 @@ async def reminder_loop(topic_id: int):
             tag = admin_tags.get(admin_id, "")
             mention = tag if tag else f"админ {admin_id}"
             try:
-                sent = await bot.send_message(
+                await bot.send_message(
                     GROUP_ID,
-                    f"🔔 {mention}, у тебя новый пользователь в этой теме. Ответь, пожалуйста.",
+                    f"🔔 {mention}, у тебя новый пользователь. Ответь, пожалуйста.",
                     message_thread_id=topic_id,
                 )
-                topic_history.setdefault(topic_id, []).append(sent.message_id)
             except Exception as e:
-                logging.error(f"Напоминание не отправлено: {e}")
+                logging.error(f"Напоминание: {e}")
                 return
     except asyncio.CancelledError:
         return
@@ -297,12 +571,11 @@ def stop_reminder(topic_id: int):
             task.cancel()
 
 
-# ================== Данные ==================
+# ================== ДАННЫЕ ==================
 
 async def load_data():
     global user_topics, blocked_users, admins, owners, all_users
-    global admin_to_user_msg, user_to_admin_msg, user_rates
-    global warns, mutes, admin_tags, admin_roles, read_status
+    global user_rates, warns, mutes, admin_tags, admin_roles, read_status
 
     if JSONBLOB_URL:
         try:
@@ -315,8 +588,6 @@ async def load_data():
                         admins = set(map(int, data.get("admins", [])))
                         owners = set(map(int, data.get("owners", [])))
                         all_users = set(map(int, data.get("all_users", [])))
-                        admin_to_user_msg = {tuple(map(int, k.split(":"))): v for k, v in data.get("admin_to_user_msg", {}).items()}
-                        user_to_admin_msg = {tuple(map(int, k.split(":"))): v for k, v in data.get("user_to_admin_msg", {}).items()}
                         user_rates = data.get("user_rates", {})
                         warns = {int(k): v for k, v in data.get("warns", {}).items()}
                         mutes = {int(k): datetime.fromisoformat(v) for k, v in data.get("mutes", {}).items()}
@@ -362,8 +633,6 @@ async def save_data():
         "admins": list(admins),
         "owners": list(owners),
         "all_users": list(all_users),
-        "admin_to_user_msg": {f"{k[0]}:{k[1]}": v for k, v in admin_to_user_msg.items()},
-        "user_to_admin_msg": {f"{k[0]}:{k[1]}": v for k, v in user_to_admin_msg.items()},
         "user_rates": user_rates,
         "warns": {str(k): v for k, v in warns.items()},
         "mutes": {str(k): v.isoformat() for k, v in mutes.items()},
@@ -379,7 +648,7 @@ async def save_data():
         logging.error(f"Ошибка сохранения: {e}")
 
 
-# ================== Команды ==================
+# ================== КОМАНДЫ ==================
 
 @dp.message(Command("start"))
 async def cmd_start(message: Message):
@@ -401,9 +670,7 @@ async def cmd_myrank(message: Message):
 @dp.message(Command("stats"), F.chat.id == GROUP_ID)
 async def cmd_stats(message: Message):
     await message.answer(
-        f"👥 Всего: {len(all_users)}\n"
-        f"💬 Тем: {len(user_topics)}\n"
-        f"🔒 Блок: {len(blocked_users)}"
+        f"👥 Всего: {len(all_users)}\n💬 Тем: {len(user_topics)}\n🔒 Блок: {len(blocked_users)}"
     )
 
 
@@ -429,15 +696,14 @@ async def cmd_close(message: Message):
             await message.answer("Не удалось удалить тему.")
             return
         user_topics.pop(user_id, None)
-        admin_to_user_msg = {k: v for k, v in admin_to_user_msg.items() if k[0] != topic_id}
-        user_to_admin_msg = {k: v for k, v in user_to_admin_msg.items() if k[0] != user_id}
         read_status.pop(user_id, None)
         topic_history.pop(topic_id, None)
         frozen_topics.pop(topic_id, None)
+        waiting_admin_replied.pop(user_id, None)
         await save_data()
         await message.answer("Тема удалена.")
         try:
-            await bot.send_message(user_id, "Пожалуйста, оцените работу администратора от 1 до 10:", reply_markup=rating_keyboard())
+            await bot.send_message(user_id, "Оцените работу админа от 1 до 10:", reply_markup=rating_keyboard())
         except Exception:
             pass
     else:
@@ -452,8 +718,6 @@ async def cmd_clear(message: Message):
     user_topics.clear()
     blocked_users.clear()
     all_users.clear()
-    admin_to_user_msg.clear()
-    user_to_admin_msg.clear()
     user_rates.clear()
     warns.clear()
     mutes.clear()
@@ -708,15 +972,25 @@ async def cmd_greet(message: Message):
     if not user_id:
         await message.answer("Пользователь не найден.")
         return
+
+    try:
+        await bot.send_message(
+            GROUP_ID,
+            f"Приветствие для пользователя:\n\n{greeting}",
+            message_thread_id=topic_id,
+        )
+    except Exception as e:
+        logging.error(f"Не удалось отправить в тему: {e}")
+
     try:
         await bot.send_message(user_id, greeting)
         await message.answer("Приветствие отправлено.")
     except Exception as e:
-        logging.error(f"Ошибка greet: {e}")
-        await message.answer("Ошибка отправки.")
+        logging.error(f"Не удалось отправить пользователю: {e}")
+        await message.answer("Не удалось отправить пользователю.")
 
 
-# ================== Report ==================
+# ================== REPORT ==================
 
 @dp.message(Command("report"))
 async def cmd_report(message: Message, state: FSMContext):
@@ -736,7 +1010,7 @@ async def process_report(message: Message, state: FSMContext):
     await state.clear()
 
 
-# ================== Stop ==================
+# ================== STOP ==================
 
 @dp.message(Command("stop"))
 async def cmd_stop(message: Message):
@@ -751,11 +1025,12 @@ async def cmd_stop(message: Message):
         read_status.pop(user_id, None)
         topic_history.pop(topic_id, None)
         frozen_topics.pop(topic_id, None)
+        waiting_admin_replied.pop(user_id, None)
         await save_data()
     await message.answer("Диалог завершён. Напиши /start, если снова захочешь.")
 
 
-# ================== Change ==================
+# ================== CHANGE ==================
 
 @dp.message(Command("change"))
 async def cmd_change(message: Message, state: FSMContext):
@@ -778,7 +1053,7 @@ async def cmd_change(message: Message, state: FSMContext):
 
 @dp.callback_query(F.data == "change_no")
 async def change_no(callback: CallbackQuery, state: FSMContext):
-    await callback.message.edit_text("Ок, оставляем как есть.")
+    await callback.message.edit_text("Ок.")
     await state.clear()
     await callback.answer()
 
@@ -795,58 +1070,68 @@ async def change_yes(callback: CallbackQuery, state: FSMContext):
 
     username = callback.from_user.username or f"id{user_id}"
 
+    old_exists = True
+    try:
+        await bot.edit_forum_topic(
+            chat_id=GROUP_ID,
+            message_thread_id=old_topic_id,
+            name=f"[ЗАМОРОЖЕНО] {username}",
+        )
+    except Exception:
+        old_exists = False
+
     try:
         new_topic = await bot.create_forum_topic(chat_id=GROUP_ID, name=username)
         new_topic_id = new_topic.message_thread_id
     except Exception as e:
-        logging.error(f"Change: создать тему не удалось: {e}")
+        logging.error(f"Change: {e}")
         await callback.message.edit_text("Не удалось создать новую тему.")
         await state.clear()
         await callback.answer()
         return
 
-    # Перенос истории
-    old_history = topic_history.get(old_topic_id, [])[:]
+    old_history = list(dict.fromkeys(topic_history.get(old_topic_id, [])))
     for msg_id in old_history:
         try:
-            copied = await bot.copy_message(
+            await bot.copy_message(
                 chat_id=GROUP_ID,
                 from_chat_id=GROUP_ID,
                 message_id=msg_id,
                 message_thread_id=new_topic_id,
             )
-            topic_history.setdefault(new_topic_id, []).append(copied.message_id)
         except Exception as e:
-            logging.error(f"Не удалось скопировать {msg_id}: {e}")
+            logging.warning(f"Пропуск {msg_id}: {e}")
+            continue
 
     card = (
         f"🔄 Изменено: пользователь {username} сменил админа/категорию.\n"
-        f"История сообщений перенесена."
+        f"История перенесена. Продолжаем здесь."
     )
     try:
-        sent = await bot.send_message(
+        await bot.send_message(
             GROUP_ID,
             card,
             message_thread_id=new_topic_id,
             reply_markup=get_keyboard(user_id),
         )
-        topic_history.setdefault(new_topic_id, []).append(sent.message_id)
     except Exception as e:
-        logging.error(f"Карточка change не отправлена: {e}")
+        logging.error(f"Карточка change: {e}")
 
-    frozen_topics[old_topic_id] = True
-    try:
-        await bot.send_message(
-            GROUP_ID,
-            "❄️ Тема заморожена, диалог перенесён в новую.",
-            message_thread_id=old_topic_id,
-        )
-    except Exception:
-        pass
+    if old_exists:
+        frozen_topics[old_topic_id] = True
+        try:
+            await bot.send_message(
+                GROUP_ID,
+                "❄️ Тема заморожена, диалог перенесён в новую.",
+                message_thread_id=old_topic_id,
+            )
+        except Exception:
+            pass
 
     stop_reminder(old_topic_id)
     user_topics[user_id] = new_topic_id
     read_status[user_id] = False
+    waiting_admin_replied[user_id] = False
     topic_history.pop(old_topic_id, None)
     await save_data()
 
@@ -858,7 +1143,7 @@ async def change_yes(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-# ================== Личные сообщения ==================
+# ================== ЛИЧНЫЕ СООБЩЕНИЯ ==================
 
 @dp.message(F.chat.type == "private")
 async def handle_user_message(message: Message, state: FSMContext):
@@ -881,14 +1166,13 @@ async def handle_user_message(message: Message, state: FSMContext):
         await message.answer("Вы заблокированы.")
         return
 
-    # Reply-кнопки
-    if message.text == "👤 Выбрать админа":
+    if message.text == "🤍 Позвать хранителя":
         await show_admin_buttons(message)
         return
-    if message.text == "📂 Выбрать категорию":
-        await message.answer("Выберите категорию:", reply_markup=category_keyboard())
+    if message.text == "🌸 Поболтать":
+        await message.answer("Выбери категорию:", reply_markup=category_keyboard())
         return
-    if message.text == "📜 Правила общения":
+    if message.text == "📜 Правила":
         await message.answer(RULES_TEXT)
         return
 
@@ -900,27 +1184,14 @@ async def handle_user_message(message: Message, state: FSMContext):
 
         type_comm, admin_gender = parse_request(text)
         if type_comm and admin_gender:
-            username = message.from_user.username or f"id{user_id}"
-            try:
-                topic = await bot.create_forum_topic(chat_id=GROUP_ID, name=username)
-                topic_id = topic.message_thread_id
-                user_topics[user_id] = topic_id
-                read_status[user_id] = False
-                await save_data()
-
-                info = (
-                    f"🆕 Новый запрос!\n"
-                    f"👤 Имя: {message.from_user.full_name}\n"
-                    f"🔖 Username: @{message.from_user.username or 'нет'}\n"
-                    f"📌 Тип: {type_comm}\n"
-                    f"🚻 Пол: {admin_gender}\n"
-                )
-                sent = await bot.send_message(GROUP_ID, info, message_thread_id=topic_id, reply_markup=get_keyboard(user_id, read=False))
-                topic_history.setdefault(topic_id, []).append(sent.message_id)
-                await message.answer("Готово! Админ скоро свяжется.")
-            except Exception as e:
-                logging.error(f"Ошибка создания темы: {e}")
-                await message.answer("Ошибка. Попробуй позже.")
+            await create_topic_and_show_waiting(
+                user_id=user_id,
+                username=message.from_user.username,
+                full_name=message.from_user.full_name,
+                type_comm=type_comm,
+                admin_gender=admin_gender,
+                reply_to=message,
+            )
         else:
             await message.answer("Укажи категорию и пол, например: «привет поддержка мальчик».")
         return
@@ -951,25 +1222,204 @@ async def handle_user_message(message: Message, state: FSMContext):
             sent = await bot.send_sticker(GROUP_ID, message.sticker.file_id, message_thread_id=topic_id)
             topic_history.setdefault(topic_id, []).append(sent.message_id)
     except Exception as e:
-        error_text = str(e).lower()
-        if "message thread not found" in error_text or "topic closed" in error_text:
-            username = message.from_user.username or f"id{user_id}"
-            try:
-                topic = await bot.create_forum_topic(chat_id=GROUP_ID, name=username)
-                new_topic_id = topic.message_thread_id
-                user_topics[user_id] = new_topic_id
-                await save_data()
-                info = f"🔄 Восстановление темы.\nИмя: {message.from_user.full_name}\n"
-                await bot.send_message(GROUP_ID, info, message_thread_id=new_topic_id, reply_markup=get_keyboard(user_id, read=False))
-                await message.answer("Тема пересоздана.")
-            except Exception as e2:
-                logging.error(f"Не удалось пересоздать: {e2}")
-                await message.answer("Ошибка отправки.")
-        else:
-            logging.error(f"Ошибка пересылки: {e}")
+        logging.error(f"Ошибка пересылки: {e}")
 
 
-# ================== Выбор админа ==================
+# ================== СОЗДАНИЕ ТЕМЫ ==================
+
+async def create_topic_and_show_waiting(user_id, username, full_name, type_comm, admin_gender, reply_to):
+    username_safe = username or f"id{user_id}"
+    try:
+        topic = await bot.create_forum_topic(chat_id=GROUP_ID, name=username_safe)
+        topic_id = topic.message_thread_id
+        user_topics[user_id] = topic_id
+        read_status[user_id] = False
+        waiting_admin_replied[user_id] = False
+        await save_data()
+
+        info = (
+            f"🆕 Новый запрос!\n"
+            f"👤 Имя: {full_name}\n"
+            f"🔖 Username: @{username or 'нет'}\n"
+            f"📌 Тип: {type_comm}\n"
+            f"🚻 Пол: {admin_gender}\n"
+        )
+        await bot.send_message(GROUP_ID, info, message_thread_id=topic_id, reply_markup=get_keyboard(user_id, read=False))
+
+        # Уютное сообщение пользователю
+        await reply_to.answer(
+            "🌙 Я создал(а) для тебя уютное местечко.\n"
+            "Админ уже получил(а) твой запрос и скоро ответит.\n\n"
+            "Расслабься. Здесь тебя выслушают. 🤍"
+        )
+
+        # Кнопки «Пока ждёшь»
+        await reply_to.answer(
+            "🕐 Пока ты ждёшь админа, чем заняться?",
+            reply_markup=waiting_menu_keyboard(),
+        )
+    except Exception as e:
+        logging.error(f"Не удалось создать тему: {e}")
+        await reply_to.answer("Ошибка. Попробуй позже.")
+
+
+# ================== КНОПКИ «ПОКА ЖДЁШЬ» ==================
+
+@dp.callback_query(F.data == "w_animals")
+async def waiting_animals(callback: CallbackQuery):
+    await callback.message.edit_text(
+        "🐾 Выбери, о ком хочешь узнать факты:",
+        reply_markup=animals_submenu_keyboard(),
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "w_nature")
+async def waiting_nature(callback: CallbackQuery):
+    fact = random.choice(NATURE_FACTS)
+    await callback.message.edit_text(
+        f"🌿 Факт про природу:\n\n{fact}",
+        reply_markup=more_nature_keyboard(),
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "w_games")
+async def waiting_games(callback: CallbackQuery):
+    await callback.message.edit_text(
+        "🎮 Выбери мини-игру:",
+        reply_markup=games_keyboard(),
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "w_back")
+async def waiting_back(callback: CallbackQuery):
+    await callback.message.edit_text(
+        "🕐 Пока ты ждёшь админа, чем заняться?",
+        reply_markup=waiting_menu_keyboard(),
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data.startswith("a_"))
+async def animal_subtopic(callback: CallbackQuery):
+    sub = callback.data.split("_", 1)[1]
+    if sub not in FACTS:
+        await callback.answer("Раздел не найден.")
+        return
+    fact = random.choice(FACTS[sub])
+    title = ANIMAL_TITLES.get(sub, "Животные")
+    await callback.message.edit_text(
+        f"{title}: {fact}",
+        reply_markup=more_fact_keyboard(sub),
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data.startswith("more_"))
+async def more_fact(callback: CallbackQuery):
+    key = callback.data.split("_", 1)[1]
+    if key == "nature":
+        fact = random.choice(NATURE_FACTS)
+        await callback.message.edit_text(
+            f"🌿 Факт про природу:\n\n{fact}",
+            reply_markup=more_nature_keyboard(),
+        )
+    elif key in FACTS:
+        fact = random.choice(FACTS[key])
+        title = ANIMAL_TITLES.get(key, "Животные")
+        await callback.message.edit_text(
+            f"{title}: {fact}",
+            reply_markup=more_fact_keyboard(key),
+        )
+    await callback.answer()
+
+
+# ================== МИНИ-ИГРЫ ==================
+
+@dp.callback_query(F.data == "g_dice")
+async def game_dice(callback: CallbackQuery):
+    result = random.randint(1, 6)
+    await callback.message.edit_text(
+        f"🎲 Выпало: {result}",
+        reply_markup=games_keyboard(),
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "g_coin")
+async def game_coin(callback: CallbackQuery):
+    result = random.choice(["Орёл 🦅", "Решка 🪙"])
+    await callback.message.edit_text(
+        f"🪙 {result}",
+        reply_markup=games_keyboard(),
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "g_rps")
+async def game_rps_menu(callback: CallbackQuery):
+    await callback.message.edit_text(
+        "✊✋✌️ Выбери свой ход:",
+        reply_markup=rps_keyboard(),
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data.startswith("rps_"))
+async def game_rps_play(callback: CallbackQuery):
+    user_choice = callback.data.split("_", 1)[1]
+    bot_choice = random.choice(["rock", "paper", "scissors"])
+    names = {"rock": "✊ Камень", "paper": "✋ Бумага", "scissors": "✌️ Ножницы"}
+
+    if user_choice == bot_choice:
+        result = "Ничья! 🤝"
+    elif (user_choice == "rock" and bot_choice == "scissors") or \
+         (user_choice == "paper" and bot_choice == "rock") or \
+         (user_choice == "scissors" and bot_choice == "paper"):
+        result = "Ты победил! 🎉"
+    else:
+        result = "Победил бот 🤖"
+
+    await callback.message.edit_text(
+        f"Ты: {names[user_choice]}\nБот: {names[bot_choice]}\n\n{result}",
+        reply_markup=rps_keyboard(),
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "g_guess")
+async def game_guess_start(callback: CallbackQuery, state: FSMContext):
+    number = random.randint(1, 10)
+    await state.update_data(secret=number)
+    await state.set_state(GuessGameState.waiting_number)
+    await callback.message.edit_text(
+        "🔢 Я загадал число от 1 до 10. Напиши своё предположение."
+    )
+    await callback.answer()
+
+
+@dp.message(GuessGameState.waiting_number)
+async def game_guess_check(message: Message, state: FSMContext):
+    data = await state.get_data()
+    secret = data.get("secret")
+    try:
+        guess = int(message.text.strip())
+    except (ValueError, AttributeError):
+        await message.answer("Напиши число от 1 до 10.")
+        return
+
+    if guess == secret:
+        await message.answer("🎉 Угадал! Напиши /start, чтобы вернуться.")
+        await state.clear()
+    elif guess < secret:
+        await message.answer("Моё число больше. Попробуй ещё.")
+    else:
+        await message.answer("Моё число меньше. Попробуй ещё.")
+
+
+# ================== ВЫБОР АДМИНА ==================
 
 async def show_admin_buttons(message: Message):
     if not admins and not owners:
@@ -1005,6 +1455,7 @@ async def process_admin_selected(callback: CallbackQuery):
         topic_id = topic.message_thread_id
         user_topics[user_id] = topic_id
         read_status[user_id] = False
+        waiting_admin_replied[user_id] = False
         await save_data()
     except Exception as e:
         logging.error(f"Ошибка темы: {e}")
@@ -1026,8 +1477,7 @@ async def process_admin_selected(callback: CallbackQuery):
         f"🔖 Username: @{callback.from_user.username or 'нет'}\n"
         f"📌 Выбран админ (ID {admin_id}){extra}\n"
     )
-    sent = await bot.send_message(GROUP_ID, info, message_thread_id=topic_id, reply_markup=get_keyboard(user_id, read=False))
-    topic_history.setdefault(topic_id, []).append(sent.message_id)
+    await bot.send_message(GROUP_ID, info, message_thread_id=topic_id, reply_markup=get_keyboard(user_id, read=False))
 
     start_reminder(topic_id, admin_id)
 
@@ -1036,7 +1486,15 @@ async def process_admin_selected(callback: CallbackQuery):
     except Exception:
         pass
 
-    await callback.message.answer("Готово! Админ уведомлён.")
+    await callback.message.answer(
+        "🌙 Я создал(а) для тебя уютное местечко.\n"
+        "Админ уже получил(а) твой запрос и скоро ответит.\n\n"
+        "Расслабься. Здесь тебя выслушают. 🤍"
+    )
+    await callback.message.answer(
+        "🕐 Пока ты ждёшь админа, чем заняться?",
+        reply_markup=waiting_menu_keyboard(),
+    )
     try:
         await callback.message.delete()
     except Exception:
@@ -1044,7 +1502,7 @@ async def process_admin_selected(callback: CallbackQuery):
     await callback.answer()
 
 
-# ================== Выбор категории ==================
+# ================== ВЫБОР КАТЕГОРИИ ==================
 
 @dp.callback_query(F.data.startswith("cat_"))
 async def process_category_selected(callback: CallbackQuery):
@@ -1073,6 +1531,7 @@ async def process_category_selected(callback: CallbackQuery):
         topic_id = topic.message_thread_id
         user_topics[user_id] = topic_id
         read_status[user_id] = False
+        waiting_admin_replied[user_id] = False
         await save_data()
     except Exception as e:
         logging.error(f"Ошибка темы: {e}")
@@ -1087,9 +1546,16 @@ async def process_category_selected(callback: CallbackQuery):
         f"📌 Тип: {type_comm}\n"
         f"🚻 Пол: {admin_gender}\n"
     )
-    sent = await bot.send_message(GROUP_ID, info, message_thread_id=topic_id, reply_markup=get_keyboard(user_id, read=False))
-    topic_history.setdefault(topic_id, []).append(sent.message_id)
-    await callback.message.answer("Готово! Админ скоро свяжется.")
+    await bot.send_message(GROUP_ID, info, message_thread_id=topic_id, reply_markup=get_keyboard(user_id, read=False))
+
+    await callback.message.answer(
+        "🌙 Я создал(а) для тебя уютное местечко.\n"
+        "Админ скоро ответит.\n\nРасслабься. Здесь тебя выслушают. 🤍"
+    )
+    await callback.message.answer(
+        "🕐 Пока ты ждёшь админа, чем заняться?",
+        reply_markup=waiting_menu_keyboard(),
+    )
     try:
         await callback.message.delete()
     except Exception:
@@ -1097,7 +1563,7 @@ async def process_category_selected(callback: CallbackQuery):
     await callback.answer()
 
 
-# ================== Рейтинг ==================
+# ================== РЕЙТИНГ ==================
 
 @dp.callback_query(F.data.startswith("rate_"))
 async def process_rating(callback: CallbackQuery, state: FSMContext):
@@ -1123,7 +1589,7 @@ async def process_comment(message: Message, state: FSMContext):
     await state.clear()
 
 
-# ================== Сообщения из группы ==================
+# ================== СООБЩЕНИЯ ИЗ ГРУППЫ ==================
 
 @dp.message(F.chat.id == GROUP_ID)
 async def handle_admin_message(message: Message):
@@ -1143,13 +1609,16 @@ async def handle_admin_message(message: Message):
     if user_id is None:
         return
 
-    # остановить напоминание
+    # Останавливаем напоминание
     data = reminders.get(topic_id)
     if data and not data["answered"]:
         data["answered"] = True
         task = data.get("task")
         if task:
             task.cancel()
+
+    # Помечаем, что админ ответил
+    waiting_admin_replied[user_id] = True
 
     if message.text and message.text.startswith("//"):
         return
@@ -1176,7 +1645,7 @@ async def handle_admin_message(message: Message):
         logging.error(f"Ошибка отправки {user_id}: {e}")
 
 
-# ================== Редактирование ==================
+# ================== РЕДАКТИРОВАНИЕ ==================
 
 @dp.edited_message(F.chat.id == GROUP_ID)
 async def handle_admin_edited(message: Message):
@@ -1228,7 +1697,7 @@ async def handle_user_edited(message: Message):
         logging.error(f"Ошибка редактирования в теме: {e}")
 
 
-# ================== Кнопки карточки ==================
+# ================== КНОПКИ КАРТОЧКИ ==================
 
 @dp.callback_query(F.data.startswith("block:"))
 async def process_block(callback: CallbackQuery):
@@ -1309,7 +1778,10 @@ async def process_read(callback: CallbackQuery):
     while lines and lines[-1] in ("✅ Прочитано", "❓ Разблокировать?"):
         lines.pop()
     try:
-        await callback.message.edit_text("\n".join(lines) + "\n\n✅ Прочитано", reply_markup=get_keyboard(user_id, read=True))
+        await callback.message.edit_text(
+            "\n".join(lines) + "\n\n✅ Прочитано",
+            reply_markup=get_keyboard(user_id, read=True),
+        )
     except Exception:
         pass
     await callback.answer("Прочитано")
@@ -1330,7 +1802,7 @@ async def process_unread(callback: CallbackQuery):
     await callback.answer("Отменено")
 
 
-# ================== Запуск ==================
+# ================== ЗАПУСК ==================
 
 async def main():
     logging.basicConfig(level=logging.INFO)
