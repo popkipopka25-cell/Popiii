@@ -81,15 +81,15 @@ ADMIN_GREETINGS = {
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
-user_topics = {}       # user_id -> topic_id
-topic_to_user = {}     # topic_id -> user_id
-chat_mode = {}         # user_id -> "group"|"private"|"admin"
-user_admin_map = {}    # user_id -> admin_id
-admin_user_map = {}    # admin_id -> user_id
-pending_mode_topics = set()   # topic_id, где админ ещё не выбрал режим
-pending_user_messages = {}    # user_id -> [сообщения, ждущие выбора]
-pending_choice_mode = {}      # user_id, ожидает выбор режима для категории
-pending_admin_choice = {}     # user_id -> admin_id, ожидает выбор режима
+user_topics = {}
+topic_to_user = {}
+chat_mode = {}
+user_admin_map = {}
+admin_user_map = {}
+pending_mode_topics = set()
+pending_user_messages = {}
+pending_choice_mode = {}
+pending_admin_choice = {}
 
 blocked_users = set()
 admins = set()
@@ -794,29 +794,33 @@ async def cmd_greet(message: Message):
 async def handle_private(message: Message, state: FSMContext):
     user_id = message.from_user.id
 
-    # ========== АДМИН ОТВЕЧАЕТ В ЛИЧКЕ ==========
-    if user_id in admin_user_map and user_id not in user_topics:
-        target_user = admin_user_map[user_id]
-        try:
-            if message.text:
-                await bot.send_message(target_user, message.text)
-            elif message.voice:
-                await bot.send_voice(target_user, message.voice.file_id)
-            elif message.video_note:
-                await bot.send_video_note(target_user, message.video_note.file_id)
-            elif message.video:
-                await bot.send_video(target_user, message.video.file_id)
-            elif message.photo:
-                await bot.send_photo(target_user, message.photo[-1].file_id)
-            elif message.document:
-                await bot.send_document(target_user, message.document.file_id)
-            elif message.sticker:
-                await bot.send_sticker(target_user, message.sticker.file_id)
-        except Exception as e:
-            logging.error(f"Ошибка пересылки пользователю: {e}")
+    # ========== ЭТО АДМИН? ==========
+    # Проверяем админа ДО всего остального — чтобы его сообщения уходили пользователю без префикса.
+    if is_admin(user_id):
+        target_user = admin_user_map.get(user_id)
+        if target_user is not None:
+            try:
+                if message.text:
+                    await bot.send_message(target_user, message.text)
+                elif message.voice:
+                    await bot.send_voice(target_user, message.voice.file_id)
+                elif message.video_note:
+                    await bot.send_video_note(target_user, message.video_note.file_id)
+                elif message.video:
+                    await bot.send_video(target_user, message.video.file_id)
+                elif message.photo:
+                    await bot.send_photo(target_user, message.photo[-1].file_id)
+                elif message.document:
+                    await bot.send_document(target_user, message.document.file_id)
+                elif message.sticker:
+                    await bot.send_sticker(target_user, message.sticker.file_id)
+            except Exception as e:
+                logging.error(f"Ошибка пересылки пользователю: {e}")
+            return
+        # Если админ, но не привязан ни к кому — игнорируем
         return
 
-    # ========== ПОЛЬЗОВАТЕЛЬ ПИШЕТ ==========
+    # ========== ЭТО ПОЛЬЗОВАТЕЛЬ ==========
     if message.text and message.text.startswith("/"):
         return
 
@@ -864,7 +868,6 @@ async def handle_private(message: Message, state: FSMContext):
     mode = chat_mode.get(user_id, "admin")
     topic_id = user_topics[user_id]
 
-    # Режим «в личке с ботом»
     if mode == "private":
         admin_id = user_admin_map.get(user_id)
         if not admin_id:
@@ -894,7 +897,6 @@ async def handle_private(message: Message, state: FSMContext):
             logging.error(f"Ошибка пересылки админу: {e}")
         return
 
-    # Режим «админ выбирает» (пока не выбрал)
     if mode == "admin" and topic_id in pending_mode_topics:
         pending_user_messages.setdefault(user_id, []).append({
             "type": "text" if message.text else
@@ -915,7 +917,6 @@ async def handle_private(message: Message, state: FSMContext):
         await message.answer("⏳ Сообщение сохранено. Ждём, пока админ выберет режим.")
         return
 
-    # Режим «в группе»
     try:
         if message.text:
             sent = await bot.send_message(GROUP_ID, message.text, message_thread_id=topic_id)
@@ -1063,7 +1064,6 @@ async def create_topic(callback: CallbackQuery, admin_id=None, type_comm=None, a
 
     await save_data()
 
-    # Карточка
     if admin_id:
         tag = admin_tags.get(admin_id, "")
         role = admin_roles.get(admin_id, "")
@@ -1089,19 +1089,9 @@ async def create_topic(callback: CallbackQuery, admin_id=None, type_comm=None, a
 
     if mode == "admin":
         info += "\n\n👇 Админ, выбери, где тебе удобнее общаться:"
-        sent = await bot.send_message(
-            GROUP_ID,
-            info,
-            message_thread_id=topic_id,
-            reply_markup=admin_mode_choice_keyboard(user_id),
-        )
+        sent = await bot.send_message(GROUP_ID, info, message_thread_id=topic_id, reply_markup=admin_mode_choice_keyboard(user_id))
     else:
-        sent = await bot.send_message(
-            GROUP_ID,
-            info,
-            message_thread_id=topic_id,
-            reply_markup=get_keyboard(user_id),
-        )
+        sent = await bot.send_message(GROUP_ID, info, message_thread_id=topic_id, reply_markup=get_keyboard(user_id))
     card_texts[sent.message_id] = info
 
     if admin_id:
@@ -1134,14 +1124,10 @@ async def process_admin_setmode(callback: CallbackQuery):
 
     original = card_texts.get(callback.message.message_id, callback.message.text)
     try:
-        await callback.message.edit_text(
-            original + f"\n\n✅ Админ выбрал: {mode_label(new_mode)}",
-            reply_markup=get_keyboard(user_id),
-        )
+        await callback.message.edit_text(original + f"\n\n✅ Админ выбрал: {mode_label(new_mode)}", reply_markup=get_keyboard(user_id))
     except Exception:
         pass
 
-    # Отправляем накопленные сообщения
     messages = pending_user_messages.pop(user_id, [])
     admin_id = user_admin_map.get(user_id)
     for item in messages:
