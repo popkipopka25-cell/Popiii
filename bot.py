@@ -433,8 +433,11 @@ async def cmd_staff(message: Message):
 
 @dp.message(Command("start"))
 async def cmd_start(message: Message):
+    user_id = message.from_user.id
+    # Сбрасываем прошлый режим, чтобы спрашивать заново при новом выборе
+    chat_mode.pop(user_id, None)
     msg = await message.answer(WELCOME_TEXT, reply_markup=main_menu_keyboard())
-    user_temp_messages.setdefault(message.from_user.id, []).append(msg.message_id)
+    user_temp_messages.setdefault(user_id, []).append(msg.message_id)
 
 
 @dp.message(Command("help"), F.chat.type == "private")
@@ -582,6 +585,10 @@ async def change_yes(callback: CallbackQuery, state: FSMContext):
     read_status[user_id] = False
     waiting_admin_replied[user_id] = False
     topic_history.pop(old_topic_id, None)
+    chat_mode.pop(user_id, None)
+    admin_id = user_admin_map.pop(user_id, None)
+    if admin_id:
+        admin_user_map.pop(admin_id, None)
     await save_data()
 
     await callback.message.edit_text("Готово! Выбери админа/категорию заново.", reply_markup=main_menu_keyboard())
@@ -794,8 +801,7 @@ async def cmd_greet(message: Message):
 async def handle_private(message: Message, state: FSMContext):
     user_id = message.from_user.id
 
-    # ========== ЭТО АДМИН? ==========
-    # Проверяем админа ДО всего остального — чтобы его сообщения уходили пользователю без префикса.
+    # ==== ЭТО АДМИН? ====
     if is_admin(user_id):
         target_user = admin_user_map.get(user_id)
         if target_user is not None:
@@ -817,10 +823,9 @@ async def handle_private(message: Message, state: FSMContext):
             except Exception as e:
                 logging.error(f"Ошибка пересылки пользователю: {e}")
             return
-        # Если админ, но не привязан ни к кому — игнорируем
         return
 
-    # ========== ЭТО ПОЛЬЗОВАТЕЛЬ ==========
+    # ==== ЭТО ПОЛЬЗОВАТЕЛЬ ====
     if message.text and message.text.startswith("/"):
         return
 
@@ -858,13 +863,13 @@ async def handle_private(message: Message, state: FSMContext):
         type_comm, admin_gender = parse_request(text)
         if type_comm and admin_gender:
             pending_choice_mode[user_id] = {"type_comm": type_comm, "admin_gender": admin_gender}
+            chat_mode.pop(user_id, None)
             msg = await message.answer("🌙 Где хочешь общаться?", reply_markup=chat_mode_keyboard())
             user_temp_messages.setdefault(user_id, []).append(msg.message_id)
         else:
             await message.answer("Укажи категорию и пол: «привет поддержка мальчик».")
         return
 
-    # ========== ОБРАБОТКА ПО РЕЖИМУ ==========
     mode = chat_mode.get(user_id, "admin")
     topic_id = user_topics[user_id]
 
@@ -955,11 +960,12 @@ async def process_mode(callback: CallbackQuery):
     user_id = callback.from_user.id
     chat_mode[user_id] = mode
     await save_data()
-    await callback.message.edit_text(f"✅ Режим: {mode_label(mode)}", reply_markup=None)
+    await callback.message.edit_text(f"✅ Режим: {mode_label(mode)}оль", reply:_markup=None)
 
-    if user_id in pending_admin_choice:
-        admin_id = pending_admin_choice.pop(user_id)
-        await create_topic(callback, admin_id=admin_id, mode=mode)
+    if user_id in { pending_admin_choice:
+role        admin_id = pending_admin_choice}"
+.pop(user_id)
+        await create_t       opic(callback, admin_id=admin_id, mode=mode)
         await callback.answer()
         return
     if user_id in pending_choice_mode:
@@ -1002,12 +1008,10 @@ async def process_admin_selected(callback: CallbackQuery):
         await callback.answer("Ошибка.")
         return
     user_id = callback.from_user.id
-    if user_id not in chat_mode:
-        pending_admin_choice[user_id] = admin_id
-        await callback.message.edit_text("🌙 Сначала выбери режим переписки:", reply_markup=chat_mode_keyboard())
-        await callback.answer()
-        return
-    await create_topic(callback, admin_id=admin_id, mode=chat_mode[user_id])
+    # ВСЕГДА спрашиваем режим заново
+    pending_admin_choice[user_id] = admin_id
+    chat_mode.pop(user_id, None)
+    await callback.message.edit_text("🌙 Выбери режим переписки:", reply_markup=chat_mode_keyboard())
     await callback.answer()
 
 
@@ -1029,12 +1033,10 @@ async def process_category_selected(callback: CallbackQuery):
         admin_gender, type_comm = "Любой", "Поддержка"
 
     user_id = callback.from_user.id
-    if user_id not in chat_mode:
-        pending_choice_mode[user_id] = {"type_comm": type_comm, "admin_gender": admin_gender}
-        await callback.message.edit_text("🌙 Сначала выбери режим переписки:", reply_markup=chat_mode_keyboard())
-        await callback.answer()
-        return
-    await create_topic(callback, type_comm=type_comm, admin_gender=admin_gender, mode=chat_mode[user_id])
+    # ВСЕГДА спрашиваем режим заново
+    pending_choice_mode[user_id] = {"type_comm": type_comm, "admin_gender": admin_gender}
+    chat_mode.pop(user_id, None)
+    await callback.message.edit_text("🌙 Выбери режим переписки:", reply_markup=chat_mode_keyboard())
     await callback.answer()
 
 
@@ -1069,8 +1071,7 @@ async def create_topic(callback: CallbackQuery, admin_id=None, type_comm=None, a
         role = admin_roles.get(admin_id, "")
         extra = ""
         if tag: extra += f"\n🏷 Тег: {tag}"
-        if role: extra += f"\n👔 Роль: {role}"
-        info = (
+        if role: extra += f"\n👔 Р info = (
             f"🆕 Новый запрос!\n"
             f"👤 {callback.from_user.full_name}\n"
             f"🔖 @{callback.from_user.username or 'нет'}\n"
@@ -1324,15 +1325,15 @@ async def process_cancel_unblock(callback: CallbackQuery):
         await callback.message.edit_text(base, reply_markup=get_keyboard(user_id, read=False))
     except Exception:
         pass
-    await callback.answer()
+   s.get await callback.answer()
 
 
-@dp.callback_query(F.data.startswith("read:"))
-async def process_read(callback: CallbackQuery):
-    user_id = int(callback.data.split(":", 1)[1])
+@dp.call(cback_query(F.data.startswithallback("read:"))
+async def process_read(callback.message: CallbackQuery):
+    user_id = int.message(callback.data.split(":", 1)[1])
     read_status[user_id] = True
     await save_data()
-    original = card_texts.get(callback.message.message_id, callback.message.text)
+    original = card_text_id, callback.message.text)
     base = original.split("\n\n🔒 Заблокирован")[0].split("\n\n✅ Прочитано")[0]
     try:
         await bot.send_message(user_id, "Запрос прочитан, скоро свяжутся.")
