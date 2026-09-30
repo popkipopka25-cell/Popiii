@@ -81,20 +81,15 @@ ADMIN_GREETINGS = {
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
-# user_id -> topic_id
-user_topics = {}
-# topic_id -> user_id
-topic_to_user = {}
-# user_id -> "group"|"private"|"admin"
-chat_mode = {}
-# user_id -> admin_id (кто ведёт диалог)
-user_admin_map = {}
-# admin_id -> user_id
-admin_user_map = {}
-# topic_id -> True, пока админ не выбрал режим при mode="admin"
-pending_mode_topics = set()
-# user_id -> [pending messages text/type]
-pending_user_messages = {}
+user_topics = {}       # user_id -> topic_id
+topic_to_user = {}     # topic_id -> user_id
+chat_mode = {}         # user_id -> "group"|"private"|"admin"
+user_admin_map = {}    # user_id -> admin_id
+admin_user_map = {}    # admin_id -> user_id
+pending_mode_topics = set()   # topic_id, где админ ещё не выбрал режим
+pending_user_messages = {}    # user_id -> [сообщения, ждущие выбора]
+pending_choice_mode = {}      # user_id, ожидает выбор режима для категории
+pending_admin_choice = {}     # user_id -> admin_id, ожидает выбор режима
 
 blocked_users = set()
 admins = set()
@@ -170,10 +165,12 @@ def chat_mode_keyboard() -> InlineKeyboardMarkup:
 
 
 def admin_mode_choice_keyboard(user_id: int) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="💬 В группе", callback_data=f"adminset_group:{user_id}"),
-        InlineKeyboardButton(text="🤍 В личке", callback_data=f"adminset_private:{user_id}"),
-    ]])
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💬 В группе", callback_data=f"adminset_group:{user_id}"),
+         InlineKeyboardButton(text="🤍 В личке", callback_data=f"adminset_private:{user_id}")],
+        [InlineKeyboardButton(text="🔒 Заблокировать", callback_data=f"block:{user_id}"),
+         InlineKeyboardButton(text="✅ Прочитать", callback_data=f"read:{user_id}")],
+    ])
 
 
 def rating_keyboard() -> InlineKeyboardMarkup:
@@ -503,10 +500,10 @@ async def cmd_stop(message: Message):
         frozen_topics.pop(topic_id, None)
         waiting_admin_replied.pop(user_id, None)
         chat_mode.pop(user_id, None)
+        pending_mode_topics.discard(topic_id)
         admin_id = user_admin_map.pop(user_id, None)
         if admin_id:
             admin_user_map.pop(admin_id, None)
-        pending_mode_topics.discard(topic_id)
         await save_data()
     await message.answer("Диалог завершён. Напиши /start, если снова захочешь.")
 
@@ -631,10 +628,10 @@ async def cmd_close(message: Message):
         frozen_topics.pop(topic_id, None)
         waiting_admin_replied.pop(user_id, None)
         chat_mode.pop(user_id, None)
+        pending_mode_topics.discard(topic_id)
         admin_id = user_admin_map.pop(user_id, None)
         if admin_id:
             admin_user_map.pop(admin_id, None)
-        pending_mode_topics.discard(topic_id)
         await save_data()
         await message.answer("Тема удалена.")
         try:
@@ -799,7 +796,6 @@ async def handle_private(message: Message, state: FSMContext):
 
     # ========== АДМИН ОТВЕЧАЕТ В ЛИЧКЕ ==========
     if user_id in admin_user_map and user_id not in user_topics:
-        # значит, это админ, ведущий диалог в личке
         target_user = admin_user_map[user_id]
         try:
             if message.text:
@@ -857,7 +853,6 @@ async def handle_private(message: Message, state: FSMContext):
             return
         type_comm, admin_gender = parse_request(text)
         if type_comm and admin_gender:
-            # Просим выбрать режим
             pending_choice_mode[user_id] = {"type_comm": type_comm, "admin_gender": admin_gender}
             msg = await message.answer("🌙 Где хочешь общаться?", reply_markup=chat_mode_keyboard())
             user_temp_messages.setdefault(user_id, []).append(msg.message_id)
@@ -916,7 +911,6 @@ async def handle_private(message: Message, state: FSMContext):
                 message.document.file_id if message.document else
                 message.sticker.file_id if message.sticker else None
             ),
-            "caption": message.caption,
         })
         await message.answer("⏳ Сообщение сохранено. Ждём, пока админ выберет режим.")
         return
@@ -931,7 +925,7 @@ async def handle_private(message: Message, state: FSMContext):
             sent = await bot.send_photo(GROUP_ID, message.photo[-1].file_id, caption=message.caption, message_thread_id=topic_id)
             topic_history.setdefault(topic_id, []).append(sent.message_id)
         elif message.video:
-            sent = await botROUP_ID, message.video.file_id, caption=message.caption, message_thread_id=topic_id)
+            sent = await bot.send_video(GROUP_ID, message.video.file_id, caption=message.caption, message_thread_id=topic_id)
             topic_history.setdefault(topic_id, []).append(sent.message_id)
         elif message.voice:
             sent = await bot.send_voice(GROUP_ID, message.voice.file_id, message_thread_id=topic_id)
@@ -949,10 +943,6 @@ async def handle_private(message: Message, state: FSMContext):
         logging.error(f"Ошибка пересылки в тему: {e}")
 
 
-pending_choice_mode = {}  # user_id -> {type_comm, admin_gender} — ждём выбор режима
-pending_admin_choice = {}  # user_id -> admin_id — ждём выбор режима перед созданием темы
-
-
 # ================== ВЫБОР РЕЖИМА ==================
 
 @dp.callback_query(F.data.startswith("mode_"))
@@ -964,15 +954,13 @@ async def process_mode(callback: CallbackQuery):
     user_id = callback.from_user.id
     chat_mode[user_id] = mode
     await save_data()
-    await callback.message.edit_text(f"✅ Режим: {mode_label(mode)}\n\nТеперь выбери админа или категорию.", reply_markup=None)
+    await callback.message.edit_text(f"✅ Режим: {mode_label(mode)}", reply_markup=None)
 
-    # Если это был шаг после выбора админа или категории — создаём тему
     if user_id in pending_admin_choice:
         admin_id = pending_admin_choice.pop(user_id)
         await create_topic(callback, admin_id=admin_id, mode=mode)
         await callback.answer()
         return
-
     if user_id in pending_choice_mode:
         data = pending_choice_mode.pop(user_id)
         await create_topic(callback, type_comm=data["type_comm"], admin_gender=data["admin_gender"], mode=mode)
@@ -1066,7 +1054,6 @@ async def create_topic(callback: CallbackQuery, admin_id=None, type_comm=None, a
     read_status[user_id] = False
     waiting_admin_replied[user_id] = False
 
-    # Информация о режиме
     if mode == "admin":
         pending_mode_topics.add(topic_id)
 
@@ -1088,7 +1075,7 @@ async def create_topic(callback: CallbackQuery, admin_id=None, type_comm=None, a
             f"👤 {callback.from_user.full_name}\n"
             f"🔖 @{callback.from_user.username or 'нет'}\n"
             f"📌 Выбран админ (ID {admin_id}){extra}\n"
-            f"📍 Режим: {mode_label(mode)}\n"
+            f"📍 Режим: {mode_label(mode)}"
         )
     else:
         info = (
@@ -1097,23 +1084,24 @@ async def create_topic(callback: CallbackQuery, admin_id=None, type_comm=None, a
             f"🔖 @{callback.from_user.username or 'нет'}\n"
             f"📌 Тип: {type_comm}\n"
             f"🚻 Пол: {admin_gender}\n"
-            f"📍 Режим: {mode_label(mode)}\n"
+            f"📍 Режим: {mode_label(mode)}"
         )
 
     if mode == "admin":
-        info += "\n👇 Админ, выбери где удобнее общаться:"
+        info += "\n\n👇 Админ, выбери, где тебе удобнее общаться:"
         sent = await bot.send_message(
-            GROUP_ID, info, message_thread_id=topic_id,
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                InlineKeyboardButton(text="💬 В группе", callback_data=f"adminset_group:{user_id}"),
-                InlineKeyboardButton(text="🤍 В личке", callback_data=f"adminset_private:{user_id}"),
-            ], [
-                InlineKeyboardButton(text="🔒 Заблокировать", callback_data=f"block:{user_id}"),
-                InlineKeyboardButton(text="✅ Прочитать", callback_data=f"read:{user_id}"),
-            ]]),
+            GROUP_ID,
+            info,
+            message_thread_id=topic_id,
+            reply_markup=admin_mode_choice_keyboard(user_id),
         )
     else:
-        sent = await bot.send_message(GROUP_ID, info, message_thread_id=topic_id, reply_markup=get_keyboard(user_id))
+        sent = await bot.send_message(
+            GROUP_ID,
+            info,
+            message_thread_id=topic_id,
+            reply_markup=get_keyboard(user_id),
+        )
     card_texts[sent.message_id] = info
 
     if admin_id:
@@ -1160,19 +1148,19 @@ async def process_admin_setmode(callback: CallbackQuery):
         try:
             if new_mode == "group" and topic_id:
                 if item["type"] == "text":
-                    sent = await bot.send_message(GROUP_ID, item["content"], message_thread_id=topic_id)
+                    await bot.send_message(GROUP_ID, item["content"], message_thread_id=topic_id)
                 elif item["type"] == "voice":
-                    sent = await bot.send_voice(GROUP_ID, item["content"], message_thread_id=topic_id)
+                    await bot.send_voice(GROUP_ID, item["content"], message_thread_id=topic_id)
                 elif item["type"] == "video_note":
-                    sent = await bot.send_video_note(GROUP_ID, item["content"], message_thread_id=topic_id)
+                    await bot.send_video_note(GROUP_ID, item["content"], message_thread_id=topic_id)
                 elif item["type"] == "video":
-                    sent = await bot.send_video(GROUP_ID, item["content"], message_thread_id=topic_id)
+                    await bot.send_video(GROUP_ID, item["content"], message_thread_id=topic_id)
                 elif item["type"] == "photo":
-                    sent = await bot.send_photo(GROUP_ID, item["content"], message_thread_id=topic_id)
+                    await bot.send_photo(GROUP_ID, item["content"], message_thread_id=topic_id)
                 elif item["type"] == "document":
-                    sent = await bot.send_document(GROUP_ID, item["content"], message_thread_id=topic_id)
+                    await bot.send_document(GROUP_ID, item["content"], message_thread_id=topic_id)
                 elif item["type"] == "sticker":
-                    sent = await bot.send_sticker(GROUP_ID, item["content"], message_thread_id=topic_id)
+                    await bot.send_sticker(GROUP_ID, item["content"], message_thread_id=topic_id)
             elif new_mode == "private" and admin_id:
                 if item["type"] == "text":
                     await bot.send_message(admin_id, f"💬 {item['content']}")
@@ -1243,17 +1231,14 @@ async def handle_admin_message(message: Message):
         elif message.sticker:
             await bot.send_sticker(user_id, message.sticker.file_id)
         else:
-            await bot.copy_message(user_idлок, message.chat.id, message.message_id)
-и   рован except Exception as e:
-        logging.error(f")
-
-
-"Ошибка отправки {user_id}: {e}")
+            await bot.copy_message(user_id, message.chat.id, message.message_id)
+    except Exception as e:
+        logging.error(f"Ошибка отправки {user_id}: {e}")
 
 
 @dp.edited_message(F.chat.id == GROUP_ID)
 async def handle_admin_edited(message: Message):
-    if message.from_user is None or message.from_user.is@dp_bot:
+    if message.from_user is None or message.from_user.is_bot:
         return
     if not message.message_thread_id or not message.text:
         return
@@ -1312,7 +1297,10 @@ async def process_block(callback: CallbackQuery):
         await callback.message.edit_text(base + "\n\n🔒 Заблокирован", reply_markup=get_keyboard(user_id, read=False))
     except Exception:
         pass
-    await callback.answer("Заб.callback_query(F.data.startswith("unblock:"))
+    await callback.answer("Заблокирован")
+
+
+@dp.callback_query(F.data.startswith("unblock:"))
 async def process_unblock(callback: CallbackQuery):
     user_id = int(callback.data.split(":", 1)[1])
     try:
@@ -1329,8 +1317,7 @@ async def process_confirm_unblock(callback: CallbackQuery):
     read_status[user_id] = False
     await save_data()
     original = card_texts.get(callback.message.message_id, callback.message.text)
-    base = original.split("\n\n🔒"),
- Заблокирован")[0].split("\n\n✅ Прочитано")[0]
+    base = original.split("\n\n🔒 Заблокирован")[0].split("\n\n✅ Прочитано")[0]
     try:
         await bot.send_message(user_id, "Вы разблокированы.")
     except Exception:
@@ -1418,7 +1405,8 @@ async def main():
         BotCommand(command="rules", description="Правила общения"),
         BotCommand(command="status", description="Статус диалога"),
         BotCommand(command="change", description="Сменить хранителя"),
-        BotCommand(command="report", description="Жалоба на админа        BotCommand(command="myrank", description="Мой ранг"),
+        BotCommand(command="report", description="Жалоба на админа"),
+        BotCommand(command="myrank", description="Мой ранг"),
         BotCommand(command="stop", description="Завершить диалог"),
     ])
 
