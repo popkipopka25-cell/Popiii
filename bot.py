@@ -32,31 +32,18 @@ for _x in _raw_owners.split(","):
 JSONBLOB_URL = os.getenv("JSONBLOB_URL", "")
 
 PRESET_ADMIN_TAGS = {
-    7790900154: "#Серафим",
-    6354283893: "#Киса",
-    2087257865: "#Чапа",
-    8275375761: "#лютик",
-    6870680424: "#цена",
-    5812572110: "#Темная",
-    6698192304: "#минерва",
-    6599739238: "#Мадока",
-    7894506921: "#добряк",
-    7479469048: "#сатана",
-    8973469291: "#фитоняшка",
-    7803825182: "#мурлыка",
+    7790900154: "#Серафим", 6354283893: "#Киса", 2087257865: "#Чапа",
+    8275375761: "#лютик", 6870680424: "#цена", 5812572110: "#Темная",
+    6698192304: "#минерва", 6599739238: "#Мадока", 7894506921: "#добряк",
+    7479469048: "#сатана", 8973469291: "#фитоняшка", 7803825182: "#мурлыка",
 }
 PRESET_ADMIN_ROLES = {
-    7790900154: "Влд",
-    6354283893: "Сов.влд",
+    7790900154: "Влд", 6354283893: "Сов.влд",
     2087257865: "Зам.Сов.Влд//адм.инженер//общение",
-    8275375761: "адм.универсал",
-    6870680424: "адм.общения",
-    5812572110: "адм.универсал",
-    6698192304: "адм.универсал",
-    6599739238: "адм.универсал",
-    7894506921: "Мальчик · Универсал",
-    7479469048: "Девочка · Универсал",
-    8973469291: "Девочка · Универсал",
+    8275375761: "адм.универсал", 6870680424: "адм.общения",
+    5812572110: "адм.универсал", 6698192304: "адм.универсал",
+    6599739238: "адм.универсал", 7894506921: "Мальчик · Универсал",
+    7479469048: "Девочка · Универсал", 8973469291: "Девочка · Универсал",
     7803825182: "Мальчик · Универсал",
 }
 FORBIDDEN_TAGS = {"#люстра", "#зефирка2.0", "#падшая", "#тигрица"}
@@ -93,18 +80,18 @@ topic_to_user = {}
 chat_mode = {}
 user_admin_map = {}
 admin_user_map = {}
-admin_msg_to_user = {}
+admin_msg_to_user = {}            # (bot_id, msg_id в группе) -> user_id
+private_admin_msg_to_user = {}    # (admin_id, msg_id в ЛС) -> user_id
+user_username = {}                # user_id -> @username
+user_first_name = {}              # user_id -> first_name
+
 pending_mode_topics = set()
 pending_user_messages = {}
-pending_choice_mode = {}
-pending_admin_choice = {}
 
 blocked_users = set()
 admins = set()
 owners = set(OWNER_IDS)
 all_users = set()
-admin_to_user_msg = {}
-user_to_admin_msg = {}
 warns = {}
 mutes = {}
 admin_tags = {}
@@ -145,7 +132,6 @@ RULES_TEXT = (
 
 # ================== КЛАВИАТУРЫ ==================
 def main_menu_keyboard() -> ReplyKeyboardMarkup:
-    """Reply-клавиатура — ТОЛЬКО для лички!"""
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="🤍 Позвать хранителя"), KeyboardButton(text="🌸 Поболтать")],
@@ -240,6 +226,38 @@ def find_user_by_topic(topic_id: int):
     return topic_to_user.get(topic_id)
 
 
+def user_display(user_id: int) -> str:
+    """Красивое отображение: @username (ID) или ID."""
+    uname = user_username.get(user_id)
+    if uname:
+        return f"@{uname} (<code>{user_id}</code>)"
+    return f"<code>{user_id}</code>"
+
+
+def user_header(user_id: int, first_name: str = "") -> str:
+    """Шапка с юзернеймом для карточек."""
+    uname = user_username.get(user_id)
+    uname_str = f"@{uname}" if uname else "без юза"
+    fname = first_name or user_first_name.get(user_id, "")
+    lines = [
+        f"👤 <b>@{uname_str}</b>" if uname else "👤 <b>без юза</b>",
+        f"🆔 <code>{user_id}</code>",
+    ]
+    if fname:
+        lines.append(f"📛 {fname}")
+    return "\n".join(lines)
+
+
+def remember_user(message: Message):
+    """Сохранить username и first_name пользователя."""
+    uid = message.from_user.id
+    all_users.add(uid)
+    if message.from_user.username:
+        user_username[uid] = message.from_user.username
+    if message.from_user.first_name:
+        user_first_name[uid] = message.from_user.first_name
+
+
 def mode_label(mode: str) -> str:
     if mode == "group":
         return "💬 в группе (в теме)"
@@ -290,7 +308,8 @@ def stop_reminder(topic_id: int):
 # ================== СОХРАНЕНИЕ ==================
 async def load_data():
     global user_topics, topic_to_user, blocked_users, admins, owners, all_users
-    global warns, mutes, admin_tags, admin_roles, read_status, chat_mode, user_admin_map, admin_user_map
+    global warns, mutes, admin_tags, admin_roles, read_status, chat_mode
+    global user_admin_map, admin_user_map, user_username, user_first_name
 
     if JSONBLOB_URL:
         try:
@@ -311,6 +330,8 @@ async def load_data():
                         chat_mode = {int(k): v for k, v in data.get("chat_mode", {}).items()}
                         user_admin_map = {int(k): v for k, v in data.get("user_admin_map", {}).items()}
                         admin_user_map = {v: k for k, v in user_admin_map.items()}
+                        user_username = {int(k): v for k, v in data.get("user_username", {}).items()}
+                        user_first_name = {int(k): v for k, v in data.get("user_first_name", {}).items()}
         except Exception as e:
             logging.error(f"Ошибка загрузки: {e}")
 
@@ -349,6 +370,8 @@ async def save_data():
         "read_status": {str(k): v for k, v in read_status.items()},
         "chat_mode": {str(k): v for k, v in chat_mode.items()},
         "user_admin_map": {str(k): v for k, v in user_admin_map.items()},
+        "user_username": {str(k): v for k, v in user_username.items()},
+        "user_first_name": {str(k): v for k, v in user_first_name.items()},
     }
     try:
         async with aiohttp.ClientSession() as session:
@@ -421,12 +444,63 @@ async def cmd_staff(message: Message):
     await message.answer("\n".join(lines))
 
 
+@dp.message(Command("users"), F.chat.type == "private")
+async def cmd_users(message: Message):
+    """Показывает владельцу всех пользователей с юзернеймами."""
+    if not is_owner(message.from_user.id):
+        await message.answer("⛔ Только владелец.")
+        return
+    if not all_users:
+        await message.answer("Пользователей ещё нет.")
+        return
+    lines = [f"👥 Всего: {len(all_users)}\n"]
+    for uid in list(all_users)[:50]:
+        uname = user_username.get(uid)
+        uname_str = f"@{uname}" if uname else "без юза"
+        topic = user_topics.get(uid)
+        status = "🔒" if uid in blocked_users else ("💬" if topic else "⚪")
+        lines.append(f"{status} <code>{uid}</code> | {uname_str}")
+    await message.answer("\n".join(lines))
+
+
+@dp.message(Command("who"), F.chat.type == "private")
+async def cmd_who_private(message: Message):
+    """Админ пишет /who <id> — получает инфу о пользователе."""
+    if not is_admin(message.from_user.id):
+        return
+    args = message.text.split()
+    if len(args) != 2:
+        await message.answer("Формат: /who <id>")
+        return
+    try:
+        uid = int(args[1])
+    except ValueError:
+        await message.answer("Неверный ID.")
+        return
+    uname = user_username.get(uid)
+    uname_str = f"@{uname}" if uname else "без юза"
+    fname = user_first_name.get(uid, "—")
+    mode = mode_label(chat_mode.get(uid, "—"))
+    topic = user_topics.get(uid, "—")
+    status = "🔒 заблокирован" if uid in blocked_users else "🟢 активен"
+    await message.answer(
+        f"👤 <b>Пользователь</b>\n"
+        f"  ID: <code>{uid}</code>\n"
+        f"  Username: {uname_str}\n"
+        f"  Имя: {fname}\n"
+        f"  Режим: {mode}\n"
+        f"  Тема: <code>{topic}</code>\n"
+        f"  Статус: {status}"
+    )
+
+
 # ================== 2. ПОЛЬЗОВАТЕЛЬ (КОМАНДЫ ЛИЧКИ) ==================
 @dp.message(Command("start"), F.chat.type == "private")
 async def cmd_start(message: Message):
     user_id = message.from_user.id
     chat_mode.pop(user_id, None)
-    all_users.add(user_id)
+    remember_user(message)
+    await save_data()
     msg = await message.answer(WELCOME_TEXT, reply_markup=main_menu_keyboard())
     user_temp_messages.setdefault(user_id, []).append(msg.message_id)
 
@@ -468,7 +542,7 @@ async def cmd_report(message: Message, state: FSMContext):
 
 @dp.message(ReportStates.waiting_for_text)
 async def process_report(message: Message, state: FSMContext):
-    text = f"🚨 Репорт от {message.from_user.id}:\n{message.text}"
+    text = f"🚨 Репорт от {user_display(message.from_user.id)}:\n{message.text}"
     for o in owners:
         try:
             await bot.send_message(o, text)
@@ -533,17 +607,17 @@ async def change_yes(callback: CallbackQuery, state: FSMContext):
         await state.clear()
         await callback.answer()
         return
-    username = callback.from_user.username or f"id{user_id}"
+    username = user_username.get(user_id) or callback.from_user.username or f"id{user_id}"
     old_exists = True
     try:
         await bot.edit_forum_topic(
             chat_id=GROUP_ID, message_thread_id=old_topic_id,
-            name=f"[ЗАМОРОЖЕНО] {username}"
+            name=f"[ЗАМОРОЖЕНО] @{username}"
         )
     except Exception:
         old_exists = False
     try:
-        new_topic = await bot.create_forum_topic(chat_id=GROUP_ID, name=username)
+        new_topic = await bot.create_forum_topic(chat_id=GROUP_ID, name=f"@{username}")
         new_topic_id = new_topic.message_thread_id
     except Exception as e:
         logging.error(f"Change: {e}")
@@ -562,7 +636,7 @@ async def change_yes(callback: CallbackQuery, state: FSMContext):
         except Exception:
             continue
 
-    card = f"🔄 Изменено: {username} сменил админа/категорию.\nИстория перенесена."
+    card = f"🔄 Изменено: {user_display(user_id)} сменил админа/категорию.\nИстория перенесена."
     try:
         sent = await bot.send_message(
             GROUP_ID, card, message_thread_id=new_topic_id,
@@ -594,7 +668,6 @@ async def change_yes(callback: CallbackQuery, state: FSMContext):
         admin_user_map.pop(admin_id, None)
     await save_data()
 
-    # ⚠️ ВАЖНО: reply-клавиатуру показываем ТОЛЬКО в личке
     if callback.message.chat.type == "private":
         await callback.message.answer(
             "Готово! Выбери админа/категорию заново.",
@@ -613,8 +686,81 @@ async def change_yes(callback: CallbackQuery, state: FSMContext):
 @dp.callback_query(F.data.startswith("cat_"))
 async def on_category(callback: CallbackQuery):
     category = callback.data.replace("cat_", "")
-    await callback.message.edit_text(f"Категория: <b>{category}</b>\n\nОпиши, что случилось 👇")
+    user_id = callback.from_user.id
+    label_map = {
+        "male_comm": "👦 Мальчик · Общение",
+        "male_support": "👦 Мальчик · Поддержка",
+        "female_comm": "👧 Девочка · Общение",
+        "female_support": "👧 Девочка · Поддержка",
+        "any_comm": "🌈 Любой · Общение",
+        "any_support": "🌈 Любой · Поддержка",
+    }
+    label = label_map.get(category, category)
+    await callback.message.edit_text(
+        f"Категория: <b>{label}</b>\n\nОпиши, что случилось 👇"
+    )
+
+    # Уведомляем админов с @username
+    uname = user_username.get(user_id)
+    uname_str = f"@{uname}" if uname else "без юза"
+    fname = user_first_name.get(user_id, "")
+    notif = (
+        f"📩 <b>Новая заявка</b>\n"
+        f"👤 {uname_str} (<code>{user_id}</code>)\n"
+        f"📛 {fname}\n"
+        f"🎯 Категория: <b>{label}</b>"
+    )
+    for adm in (admins | owners):
+        try:
+            await bot.send_message(adm, notif)
+        except Exception:
+            pass
+
     await callback.answer()
+
+
+@dp.callback_query(F.data.startswith("mode_"))
+async def on_mode(callback: CallbackQuery):
+    mode = callback.data.replace("mode_", "")
+    user_id = callback.from_user.id
+    chat_mode[user_id] = mode
+    await save_data()
+    admin_id = user_admin_map.get(user_id)
+    if admin_id:
+        try:
+            await bot.send_message(
+                admin_id,
+                f"🌙 {user_display(user_id)} выбрал режим: <b>{mode_label(mode)}</b>.",
+            )
+        except Exception:
+            pass
+    await callback.message.edit_text(f"Режим: <b>{mode_label(mode)}</b>\n\nОпиши, что случилось 👇")
+    await callback.answer()
+
+
+@dp.callback_query(F.data.startswith("adminset_"))
+async def on_admin_set(callback: CallbackQuery):
+    parts = callback.data.split(":")
+    if len(parts) != 2:
+        await callback.answer("Ошибка", show_alert=True)
+        return
+    kind, user_id_str = parts
+    try:
+        user_id = int(user_id_str)
+    except ValueError:
+        await callback.answer("Ошибка", show_alert=True)
+        return
+    mode = "group" if kind == "adminset_group" else "private"
+    chat_mode[user_id] = mode
+    await save_data()
+    await callback.answer(f"✅ Режим: {mode_label(mode)}", show_alert=True)
+    try:
+        await callback.message.edit_text(
+            f"✅ Режим установлен: <b>{mode_label(mode)}</b>\n"
+            f"Пользователь: {user_display(user_id)}"
+        )
+    except Exception:
+        pass
 
 
 @dp.callback_query(F.data.startswith("block:"))
@@ -693,7 +839,7 @@ async def on_rate(callback: CallbackQuery):
 async def cmd_help_group(message: Message):
     await message.answer(
         "/stats /id /rank /close /block /unblock /warn /mute /unmute "
-        "/warns /myrank /greet /resetkb"
+        "/warns /myrank /greet /resetkb /who"
     )
 
 
@@ -705,7 +851,27 @@ async def cmd_stats(message: Message):
 @dp.message(Command("id"), F.chat.id == GROUP_ID)
 async def cmd_id(message: Message):
     uid = find_user_by_topic(message.message_thread_id)
-    await message.answer(f"ID: {uid}" if uid else "Не найден")
+    if not uid:
+        await message.answer("Не найден")
+        return
+    await message.answer(f"Пользователь: {user_display(uid)}")
+
+
+@dp.message(Command("who"), F.chat.id == GROUP_ID)
+async def cmd_who_group(message: Message):
+    uid = find_user_by_topic(message.message_thread_id)
+    if not uid:
+        await message.answer("Не найден")
+        return
+    uname = user_username.get(uid)
+    uname_str = f"@{uname}" if uname else "нет юзернейма"
+    mode = mode_label(chat_mode.get(uid, "—"))
+    await message.answer(
+        f"👤 Пользователь:\n"
+        f"  ID: <code>{uid}</code>\n"
+        f"  Username: {uname_str}\n"
+        f"  Режим: {mode}"
+    )
 
 
 @dp.message(Command("close"), F.chat.id == GROUP_ID)
@@ -861,7 +1027,7 @@ async def cmd_rank(message: Message):
     if target is None:
         await message.answer("Не найден.")
         return
-    await message.answer(f"Ранг {target}: {get_rank(target)}")
+    await message.answer(f"Ранг {user_display(target)}: {get_rank(target)}")
 
 
 @dp.message(Command("greet"), F.chat.id == GROUP_ID)
@@ -892,7 +1058,6 @@ async def cmd_greet(message: Message):
 # ================== 🧹 СБРОС REPLY-КЛАВИАТУРЫ В ГРУППЕ ==================
 @dp.message(Command("resetkb"), F.chat.id == GROUP_ID)
 async def cmd_resetkb(message: Message):
-    """Убирает залипшую reply-клавиатуру у админов в группе. Только владелец."""
     if not is_owner(message.from_user.id):
         return
     msg = await message.answer("🧹 Клавиатура очищена.", reply_markup=ReplyKeyboardRemove())
@@ -903,11 +1068,13 @@ async def cmd_resetkb(message: Message):
         pass
 
 
-# ================== 5. REPLY-КНОПКИ ЛИЧКИ (⚠️ ВЫШЕ handle_private!) ==================
+# ================== 5. REPLY-КНОПКИ ЛИЧКИ ==================
 @dp.message(F.chat.type == "private", F.text == "🤍 Позвать хранителя")
 async def btn_call_keeper(message: Message, state: FSMContext):
     await state.clear()
     user_id = message.from_user.id
+    remember_user(message)
+    await save_data()
 
     if user_id in blocked_users:
         await message.answer("🚫 Ты заблокирован.")
@@ -922,15 +1089,35 @@ async def btn_call_keeper(message: Message, state: FSMContext):
         reply_markup=category_keyboard(),
     )
 
+    # --- Уведомляем всех админов с юзом ---
+    uname = user_username.get(user_id)
+    uname_str = f"@{uname}" if uname else "без юза"
+    fname = user_first_name.get(user_id, "")
+    notif = (
+        f"🔔 <b>Зовут хранителя!</b>\n"
+        f"👤 {uname_str} (<code>{user_id}</code>)\n"
+        f"📛 {fname}\n\n"
+        f"Выбери категорию и напиши пользователю."
+    )
+    for adm in (admins | owners):
+        try:
+            await bot.send_message(adm, notif)
+        except Exception:
+            pass
+
 
 @dp.message(F.chat.type == "private", F.text == "🌸 Поболтать")
 async def btn_small_talk(message: Message, state: FSMContext):
     await state.clear()
+    user_id = message.from_user.id
+    remember_user(message)
+    await save_data()
+
     msg = await message.answer(
         "🌸 О чём хочешь поболтать? Выбери категорию:",
         reply_markup=category_keyboard(),
     )
-    user_temp_messages.setdefault(message.from_user.id, []).append(msg.message_id)
+    user_temp_messages.setdefault(user_id, []).append(msg.message_id)
 
 
 @dp.message(F.chat.type == "private", F.text == "📜 Правила")
@@ -942,14 +1129,13 @@ async def btn_rules(message: Message):
 @dp.message(F.chat.type == "private")
 async def handle_private(message: Message, state: FSMContext):
     user_id = message.from_user.id
-    all_users.add(user_id)
+    remember_user(message)
 
-    # ==== АДМИН в личке ====
+    # ==== АДМИН в личке — отвечает реплаем ====
     if is_admin(user_id):
-        # Админ отвечает реплаем на сообщение пользователя
         if message.reply_to_message:
             key = (user_id, message.reply_to_message.message_id)
-            target_user = admin_msg_to_user.get(key)
+            target_user = private_admin_msg_to_user.get(key)
             if target_user is not None:
                 try:
                     if message.text:
@@ -972,7 +1158,8 @@ async def handle_private(message: Message, state: FSMContext):
                     await message.answer("⚠️ Не удалось отправить пользователю.")
                 return
         await message.answer(
-            "⚠️ Чтобы ответить пользователю, свайпни (сделай reply) на его сообщение и напиши ответ."
+            "⚠️ Чтобы ответить пользователю в ЛС, сделай reply на его "
+            "пересланное сообщение и напиши ответ."
         )
         return
 
@@ -985,32 +1172,81 @@ async def handle_private(message: Message, state: FSMContext):
         return
 
     if user_id not in user_topics:
-        # Первое сообщение без /start — просим /start
         await message.answer(
             "Привет! Напиши /start, чтобы открыть меню 🤍",
             reply_markup=main_menu_keyboard(),
         )
+        await save_data()
         return
 
-    # Активный диалог — пересылаем в тему
+    # Активный диалог
     topic_id = user_topics.get(user_id)
     if topic_id:
         try:
             sent = await message.forward(chat_id=GROUP_ID, message_thread_id=topic_id)
             admin_msg_to_user[(bot.id, sent.message_id)] = user_id
-            admin_msg_to_user[("user", user_id)] = sent.message_id
         except Exception as e:
             logging.error(f"Не удалось переслать в тему: {e}")
 
+    # --- Уведомляем админов в ЛС с юзернеймом ---
+    admin_id = user_admin_map.get(user_id)
+    targets = [admin_id] if admin_id else list(admins | owners)
 
-# ================== 7. ГРУППА — ОБЩИЙ ПРИЁМ (САМЫЙ ПОСЛЕДНИЙ!) ==================
+    uname = user_username.get(user_id)
+    uname_str = f"@{uname}" if uname else "без юза"
+    fname = user_first_name.get(user_id, "")
+    header = (
+        f"📩 <b>Новое сообщение</b>\n"
+        f"👤 {uname_str} (<code>{user_id}</code>)\n"
+        f"📛 {fname}\n"
+        f"─────\n"
+        f"Сделай reply на сообщение ниже, чтобы ответить."
+    )
+
+    for adm in targets:
+        if adm == user_id:
+            continue
+        try:
+            await bot.send_message(adm, header)
+            forwarded = await message.forward(adm)
+            private_admin_msg_to_user[(adm, forwarded.message_id)] = user_id
+        except Exception as e:
+            logging.error(f"Не удалось уведомить админа {adm}: {e}")
+
+    await save_data()
+
+
+# ================== 7. ГРУППА — АДМИНЫ В ТЕМАХ ==================
 @dp.message(F.chat.id == GROUP_ID)
 async def handle_group(message: Message):
-    """Обработчик группы — САМЫЙ ПОСЛЕДНИЙ, чтобы не перехватывал личку."""
     if message.from_user.id not in admins and message.from_user.id not in owners:
         return
-    # Тут можно добавить логику: сообщения админов в темах пересылаются пользователям
-    pass
+
+    # Админ отвечает реплаем на пересланное сообщение в теме
+    if message.reply_to_message:
+        key = (bot.id, message.reply_to_message.message_id)
+        target_user = admin_msg_to_user.get(key)
+        if target_user is not None:
+            try:
+                if message.text:
+                    await bot.send_message(target_user, message.text)
+                elif message.voice:
+                    await bot.send_voice(target_user, message.voice.file_id)
+                elif message.video_note:
+                    await bot.send_video_note(target_user, message.video_note.file_id)
+                elif message.video:
+                    await bot.send_video(target_user, message.video.file_id)
+                elif message.photo:
+                    await bot.send_photo(target_user, message.photo[-1].file_id)
+                elif message.document:
+                    await bot.send_document(target_user, message.document.file_id)
+                elif message.sticker:
+                    await bot.send_sticker(target_user, message.sticker.file_id)
+                await message.reply("✅ Отправлено пользователю.")
+            except Exception as e:
+                logging.error(f"Ошибка ответа из темы: {e}")
+                await message.reply("⚠️ Не удалось отправить.")
+            return
 
 
 # ================== ЗАПУСК ==================
@@ -1032,7 +1268,22 @@ async def on_startup():
 async def main():
     await on_startup()
     await bot.delete_webhook(drop_pending_updates=True)
-    await dp.start_polling(bot)
+
+    # --- Веб-заглушка для Render ---
+    async def health(request):
+        return web.Response(text="OK")
+
+    app = web.Application()
+    app.router.add_get("/", health)
+    app.router.add_get("/health", health)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", PORT)
+    await site.start()
+    logging.info(f"✅ Web-заглушка запущена на порту {PORT}")
+
+    # --- Polling ---
+    await dp.start_polling(bot, drop_pending_updates=True)
 
 
 if __name__ == "__main__":
