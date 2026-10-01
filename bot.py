@@ -17,20 +17,42 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 
-# ================== НАСТРОЙКИ ==================
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-GROUP_ID = int(os.getenv("GROUP_ID", "0").split()[0])
-PORT = int(os.getenv("PORT", 10000))
+# ================== БЕЗОПАСНЫЙ ПАРСИНГ ПЕРЕМЕННЫХ ==================
+def safe_int(value, default=0):
+    if value is None:
+        return default
+    try:
+        s = str(value).strip()
+        if not s:
+            return default
+        s = s.split()[0]
+        return int(s) if s.lstrip("-").isdigit() else default
+    except Exception:
+        return default
 
-_raw_owners = os.getenv("OWNER_IDS", "") or ""
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+BOT_TOKEN = (os.getenv("BOT_TOKEN") or "").strip()
+if not BOT_TOKEN:
+    logger.error("❌ BOT_TOKEN не задан в переменных окружения!")
+    raise SystemExit(1)
+
+GROUP_ID = safe_int(os.getenv("GROUP_ID"), 0)
+PORT = safe_int(os.getenv("PORT"), 10000) or 10000
+
+_raw_owners = (os.getenv("OWNER_IDS") or "").strip()
 OWNER_IDS = set()
 for _x in _raw_owners.split(","):
     _x = _x.strip()
-    if _x.isdigit():
+    if _x.lstrip("-").isdigit():
         OWNER_IDS.add(int(_x))
 
-JSONBLOB_URL = os.getenv("JSONBLOB_URL", "")
+JSONBLOB_URL = (os.getenv("JSONBLOB_URL") or "").strip()
 
+logger.info(f"✅ Конфиг: GROUP_ID={GROUP_ID}, PORT={PORT}, OWNERS={OWNER_IDS}, JSONBLOB={'да' if JSONBLOB_URL else 'нет'}")
+
+# ================== КОНСТАНТЫ ==================
 PRESET_ADMIN_TAGS = {
     7790900154: "#Серафим", 6354283893: "#Киса", 2087257865: "#Чапа",
     8275375761: "#лютик", 6870680424: "#цена", 5812572110: "#Темная",
@@ -68,9 +90,6 @@ ADMIN_GREETINGS = {
     ),
 }
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
@@ -80,10 +99,10 @@ topic_to_user = {}
 chat_mode = {}
 user_admin_map = {}
 admin_user_map = {}
-admin_msg_to_user = {}            # (bot_id, msg_id в группе) -> user_id
-private_admin_msg_to_user = {}    # (admin_id, msg_id в ЛС) -> user_id
-user_username = {}                # user_id -> @username
-user_first_name = {}              # user_id -> first_name
+admin_msg_to_user = {}
+private_admin_msg_to_user = {}
+user_username = {}
+user_first_name = {}
 
 pending_mode_topics = set()
 pending_user_messages = {}
@@ -227,7 +246,6 @@ def find_user_by_topic(topic_id: int):
 
 
 def user_display(user_id: int) -> str:
-    """Красивое отображение: @username (ID) или ID."""
     uname = user_username.get(user_id)
     if uname:
         return f"@{uname} (<code>{user_id}</code>)"
@@ -235,12 +253,11 @@ def user_display(user_id: int) -> str:
 
 
 def user_header(user_id: int, first_name: str = "") -> str:
-    """Шапка с юзернеймом для карточек."""
     uname = user_username.get(user_id)
     uname_str = f"@{uname}" if uname else "без юза"
     fname = first_name or user_first_name.get(user_id, "")
     lines = [
-        f"👤 <b>@{uname_str}</b>" if uname else "👤 <b>без юза</b>",
+        f"👤 <b>{uname_str}</b>",
         f"🆔 <code>{user_id}</code>",
     ]
     if fname:
@@ -249,7 +266,6 @@ def user_header(user_id: int, first_name: str = "") -> str:
 
 
 def remember_user(message: Message):
-    """Сохранить username и first_name пользователя."""
     uid = message.from_user.id
     all_users.add(uid)
     if message.from_user.username:
@@ -446,7 +462,6 @@ async def cmd_staff(message: Message):
 
 @dp.message(Command("users"), F.chat.type == "private")
 async def cmd_users(message: Message):
-    """Показывает владельцу всех пользователей с юзернеймами."""
     if not is_owner(message.from_user.id):
         await message.answer("⛔ Только владелец.")
         return
@@ -465,7 +480,6 @@ async def cmd_users(message: Message):
 
 @dp.message(Command("who"), F.chat.type == "private")
 async def cmd_who_private(message: Message):
-    """Админ пишет /who <id> — получает инфу о пользователе."""
     if not is_admin(message.from_user.id):
         return
     args = message.text.split()
@@ -700,7 +714,6 @@ async def on_category(callback: CallbackQuery):
         f"Категория: <b>{label}</b>\n\nОпиши, что случилось 👇"
     )
 
-    # Уведомляем админов с @username
     uname = user_username.get(user_id)
     uname_str = f"@{uname}" if uname else "без юза"
     fname = user_first_name.get(user_id, "")
@@ -1055,7 +1068,7 @@ async def cmd_greet(message: Message):
         await message.answer("Не удалось.")
 
 
-# ================== 🧹 СБРОС REPLY-КЛАВИАТУРЫ В ГРУППЕ ==================
+# ================== 🧹 СБРОС REPLY-КЛАВИАТУРЫ ==================
 @dp.message(Command("resetkb"), F.chat.id == GROUP_ID)
 async def cmd_resetkb(message: Message):
     if not is_owner(message.from_user.id):
@@ -1089,7 +1102,6 @@ async def btn_call_keeper(message: Message, state: FSMContext):
         reply_markup=category_keyboard(),
     )
 
-    # --- Уведомляем всех админов с юзом ---
     uname = user_username.get(user_id)
     uname_str = f"@{uname}" if uname else "без юза"
     fname = user_first_name.get(user_id, "")
@@ -1131,7 +1143,7 @@ async def handle_private(message: Message, state: FSMContext):
     user_id = message.from_user.id
     remember_user(message)
 
-    # ==== АДМИН в личке — отвечает реплаем ====
+    # ==== АДМИН в личке ====
     if is_admin(user_id):
         if message.reply_to_message:
             key = (user_id, message.reply_to_message.message_id)
@@ -1179,7 +1191,6 @@ async def handle_private(message: Message, state: FSMContext):
         await save_data()
         return
 
-    # Активный диалог
     topic_id = user_topics.get(user_id)
     if topic_id:
         try:
@@ -1188,7 +1199,6 @@ async def handle_private(message: Message, state: FSMContext):
         except Exception as e:
             logging.error(f"Не удалось переслать в тему: {e}")
 
-    # --- Уведомляем админов в ЛС с юзернеймом ---
     admin_id = user_admin_map.get(user_id)
     targets = [admin_id] if admin_id else list(admins | owners)
 
@@ -1216,13 +1226,12 @@ async def handle_private(message: Message, state: FSMContext):
     await save_data()
 
 
-# ================== 7. ГРУППА — АДМИНЫ В ТЕМАХ ==================
+# ================== 7. ГРУППА ==================
 @dp.message(F.chat.id == GROUP_ID)
 async def handle_group(message: Message):
     if message.from_user.id not in admins and message.from_user.id not in owners:
         return
 
-    # Админ отвечает реплаем на пересланное сообщение в теме
     if message.reply_to_message:
         key = (bot.id, message.reply_to_message.message_id)
         target_user = admin_msg_to_user.get(key)
@@ -1269,7 +1278,6 @@ async def main():
     await on_startup()
     await bot.delete_webhook(drop_pending_updates=True)
 
-    # --- Веб-заглушка для Render ---
     async def health(request):
         return web.Response(text="OK")
 
@@ -1282,7 +1290,6 @@ async def main():
     await site.start()
     logging.info(f"✅ Web-заглушка запущена на порту {PORT}")
 
-    # --- Polling ---
     await dp.start_polling(bot, drop_pending_updates=True)
 
 
