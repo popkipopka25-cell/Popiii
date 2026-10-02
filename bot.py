@@ -50,7 +50,7 @@ for _x in _raw_owners.split(","):
 
 JSONBLOB_URL = (os.getenv("JSONBLOB_URL") or "").strip()
 
-logger.info(f"✅ Конфиг: GROUP_ID={GROUP_ID}, PORT={PORT}, OWNERS={OWNER_IDS}, JSONBLOB={'да' if JSONBLOB_URL else 'нет'}")
+logger.info(f"✅ Конфиг: GROUP_ID={GROUP_ID}, PORT={PORT}, OWNERS={OWNER_IDS}")
 
 # ================== КОНСТАНТЫ ==================
 PRESET_ADMIN_TAGS = {
@@ -76,14 +76,13 @@ ADMIN_EMOJI = {
 }
 FORBIDDEN_TAGS = {"#люстра", "#зефирка2.0", "#падшая", "#тигрица"}
 
-# Категории → список ID админов, подходящих под категорию
 CATEGORIES = {
-    "male_comm":     {"label": "👦 Мальчик · Общение",     "role_key": "Мальчик", "type": "общение"},
-    "male_support":  {"label": "👦 Мальчик · Поддержка",   "role_key": "Мальчик", "type": "поддержка"},
-    "female_comm":   {"label": "👧 Девочка · Общение",     "role_key": "Девочка", "type": "общение"},
-    "female_support":{"label": "👧 Девочка · Поддержка",   "role_key": "Девочка", "type": "поддержка"},
-    "any_comm":      {"label": "🌈 Любой · Общение",       "role_key": None,      "type": "общение"},
-    "any_support":   {"label": "🌈 Любой · Поддержка",     "role_key": None,      "type": "поддержка"},
+    "male_comm":     {"label": "👦 Мальчик · Общение",   "role_key": "Мальчик", "type": "общение"},
+    "male_support":  {"label": "👦 Мальчик · Поддержка", "role_key": "Мальчик", "type": "поддержка"},
+    "female_comm":   {"label": "👧 Девочка · Общение",   "role_key": "Девочка", "type": "общение"},
+    "female_support":{"label": "👧 Девочка · Поддержка", "role_key": "Девочка", "type": "поддержка"},
+    "any_comm":      {"label": "🌈 Любой · Общение",     "role_key": None,      "type": "общение"},
+    "any_support":   {"label": "🌈 Любой · Поддержка",   "role_key": None,      "type": "поддержка"},
 }
 
 ADMIN_GREETINGS = {
@@ -115,11 +114,13 @@ topic_to_user = {}
 chat_mode = {}
 user_admin_map = {}
 admin_user_map = {}
+# Ключ: message_id сообщения бота в группе (в теме) → user_id
+# message_id сообщения бота в ЛС админа → user_id
 admin_msg_to_user = {}
 private_admin_msg_to_user = {}
 user_username = {}
 user_first_name = {}
-user_category = {}     # user_id -> категория (для "поболтать")
+user_category = {}
 
 blocked_users = set()
 admins = set()
@@ -170,7 +171,6 @@ def main_menu_keyboard() -> ReplyKeyboardMarkup:
 
 
 def admins_keyboard() -> InlineKeyboardMarkup:
-    """Список админов с эмодзи + тегами."""
     buttons = []
     for admin_id in list(admin_tags.keys()):
         if admin_id in owners or admin_id in admins:
@@ -187,7 +187,6 @@ def admins_keyboard() -> InlineKeyboardMarkup:
 
 
 def categories_keyboard() -> InlineKeyboardMarkup:
-    """Категории для 'Поболтать'."""
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="👦 Мальчик · Общение", callback_data="pick_cat:male_comm"),
          InlineKeyboardButton(text="👦 Мальчик · Поддержка", callback_data="pick_cat:male_support")],
@@ -199,10 +198,6 @@ def categories_keyboard() -> InlineKeyboardMarkup:
 
 
 def mode_choice_keyboard(source: str, source_id: str) -> InlineKeyboardMarkup:
-    """
-    source: "admin" | "cat"
-    source_id: ID админа (для admin) или ключ категории (для cat)
-    """
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💬 Переписка в теме группы", callback_data=f"mode_group:{source}:{source_id}")],
         [InlineKeyboardButton(text="🤍 Переписка в ЛС бота", callback_data=f"mode_private:{source}:{source_id}")],
@@ -211,7 +206,6 @@ def mode_choice_keyboard(source: str, source_id: str) -> InlineKeyboardMarkup:
 
 
 def get_card_keyboard(user_id: int, mode: str) -> InlineKeyboardMarkup:
-    """4 кнопки в карточке темы."""
     top = []
     if user_id in blocked_users:
         top.append(InlineKeyboardButton(text="🔓 Разблокировать", callback_data=f"unblock:{user_id}"))
@@ -297,7 +291,6 @@ def mode_label(mode: str) -> str:
 
 
 def find_admin_for_category(cat_key: str):
-    """Находит свободного админа, подходящего под категорию. Возвращает admin_id или None."""
     cat = CATEGORIES.get(cat_key)
     if not cat:
         return None
@@ -313,9 +306,75 @@ def find_admin_for_category(cat_key: str):
         candidates.append(admin_id)
     if not candidates:
         return None
-    # Берём самого свободного (у кого меньше юзеров)
     candidates.sort(key=lambda a: len([u for u, ad in user_admin_map.items() if ad == a]))
     return candidates[0]
+
+
+async def send_user_message_to_topic(user_id: int, message: Message, topic_id: int):
+    """
+    Отправляет сообщение пользователя в тему от имени БОТА (как будто бот пишет).
+    Возвращает message_id отправленного сообщения, либо None при ошибке.
+    """
+    uname = user_username.get(user_id)
+    fname = user_first_name.get(user_id, "")
+    header = f"👤 <b>@{uname}</b> (<code>{user_id}</code>)" if uname else f"👤 <code>{user_id}</code>"
+    if fname:
+        header += f" — {fname}"
+
+    try:
+        if message.text:
+            sent = await bot.send_message(
+                GROUP_ID,
+                f"{header}\n\n{message.text}",
+                message_thread_id=topic_id,
+            )
+        elif message.photo:
+            sent = await bot.send_photo(
+                GROUP_ID,
+                message.photo[-1].file_id,
+                caption=f"{header}\n\n{message.caption or ''}".strip(),
+                message_thread_id=topic_id,
+            )
+        elif message.voice:
+            sent = await bot.send_voice(
+                GROUP_ID, message.voice.file_id,
+                caption=header,
+                message_thread_id=topic_id,
+            )
+        elif message.video_note:
+            sent = await bot.send_video_note(
+                GROUP_ID, message.video_note.file_id,
+                message_thread_id=topic_id,
+            )
+            # Подпись отдельным сообщением
+            await bot.send_message(GROUP_ID, header, message_thread_id=topic_id)
+        elif message.video:
+            sent = await bot.send_video(
+                GROUP_ID, message.video.file_id,
+                caption=f"{header}\n\n{message.caption or ''}".strip(),
+                message_thread_id=topic_id,
+            )
+        elif message.document:
+            sent = await bot.send_document(
+                GROUP_ID, message.document.file_id,
+                caption=f"{header}\n\n{message.caption or ''}".strip(),
+                message_thread_id=topic_id,
+            )
+        elif message.sticker:
+            sent = await bot.send_sticker(
+                GROUP_ID, message.sticker.file_id,
+                message_thread_id=topic_id,
+            )
+            await bot.send_message(GROUP_ID, header, message_thread_id=topic_id)
+        else:
+            sent = await bot.send_message(
+                GROUP_ID, f"{header}\n\n[медиа]",
+                message_thread_id=topic_id,
+            )
+        return sent.message_id
+    except Exception as e:
+        logging.error(f"send_user_message_to_topic: {e}")
+        return None
 
 
 # ================== СОХРАНЕНИЕ ==================
@@ -623,7 +682,6 @@ async def on_pick_category(callback: CallbackQuery):
 @dp.callback_query(F.data.startswith("mode_"))
 async def on_mode_choice(callback: CallbackQuery):
     parts = callback.data.split(":")
-    # mode_group:admin:12345  или  mode_group:cat:male_comm
     if len(parts) != 3:
         await callback.answer("Ошибка", show_alert=True)
         return
@@ -644,7 +702,6 @@ async def on_mode_choice(callback: CallbackQuery):
         await callback.answer("У тебя уже есть активный диалог.", show_alert=True)
         return
 
-    # Определяем админа и текст темы
     if source == "admin":
         try:
             admin_id = int(source_id)
@@ -654,7 +711,7 @@ async def on_mode_choice(callback: CallbackQuery):
         admin_tag = admin_tags.get(admin_id, "—")
         topic_suffix = admin_tag
         category_label = None
-    else:  # cat
+    else:
         cat = CATEGORIES.get(source_id)
         if not cat:
             await callback.answer("Ошибка", show_alert=True)
@@ -664,7 +721,6 @@ async def on_mode_choice(callback: CallbackQuery):
         topic_suffix = cat["label"]
         category_label = cat["label"]
 
-    # Создаём тему В ЛЮБОМ СЛУЧАЕ
     topic_name = f"@{username} · {topic_suffix}"
     try:
         new_topic = await bot.create_forum_topic(chat_id=GROUP_ID, name=topic_name[:120])
@@ -704,7 +760,6 @@ async def on_mode_choice(callback: CallbackQuery):
     except Exception as e:
         logging.error(f"Не удалось отправить карточку: {e}")
 
-    # Ответ пользователю
     if mode == "private":
         await callback.message.edit_text(
             f"🤍 Тебя соединили с <b>{admin_tag}</b>.\n\n"
@@ -722,7 +777,6 @@ async def on_mode_choice(callback: CallbackQuery):
         )
     await callback.answer()
 
-    # Уведомление админу в ЛС бота
     if admin_id:
         notif = (
             f"🔔 <b>Новый пользователь!</b>\n"
@@ -1175,13 +1229,14 @@ async def handle_private(message: Message, state: FSMContext):
     admin_id = user_admin_map.get(user_id)
     mode = chat_mode.get(user_id, "admin")
 
+    # В ТЕМЕ — отправляем как будто бот пишет от своего имени
     if mode == "group" and topic_id:
-        try:
-            sent = await message.forward(chat_id=GROUP_ID, message_thread_id=topic_id)
-            admin_msg_to_user[(bot.id, sent.message_id)] = user_id
-        except Exception as e:
-            logging.error(f"Не удалось переслать в тему: {e}")
+        sent_id = await send_user_message_to_topic(user_id, message, topic_id)
+        if sent_id is not None:
+            # Ключ — message_id сообщения в группе → user_id
+            admin_msg_to_user[sent_id] = user_id
 
+    # В ЛС БОТА или АДМИН САМ — пересылаем админу в ЛС
     if mode in ("private", "admin") and admin_id:
         try:
             forwarded = await message.forward(admin_id)
@@ -1192,14 +1247,15 @@ async def handle_private(message: Message, state: FSMContext):
     await save_data()
 
 
-# ================== 7. ГРУППА ==================
+# ================== 7. ГРУППА — ОТВЕТЫ АДМИНОВ ==================
 @dp.message(F.chat.id == GROUP_ID)
 async def handle_group(message: Message):
     if message.from_user.id not in admins and message.from_user.id not in owners:
         return
 
     if message.reply_to_message:
-        key = (bot.id, message.reply_to_message.message_id)
+        # Ключ — message_id того сообщения в группе, на которое отвечают
+        key = message.reply_to_message.message_id
         target_user = admin_msg_to_user.get(key)
         if target_user is not None:
             try:
