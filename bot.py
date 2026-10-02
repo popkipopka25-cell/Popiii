@@ -17,7 +17,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 
-# ================== БЕЗОПАСНЫЙ ПАРСИНГ ПЕРЕМЕННЫХ ==================
+# ================== БЕЗОПАСНЫЙ ПАРСИНГ ==================
 def safe_int(value, default=0):
     if value is None:
         return default
@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 BOT_TOKEN = (os.getenv("BOT_TOKEN") or "").strip()
 if not BOT_TOKEN:
-    logger.error("❌ BOT_TOKEN не задан в переменных окружения!")
+    logger.error("❌ BOT_TOKEN не задан!")
     raise SystemExit(1)
 
 GROUP_ID = safe_int(os.getenv("GROUP_ID"), 0)
@@ -68,20 +68,11 @@ PRESET_ADMIN_ROLES = {
     7479469048: "Девочка · Универсал", 8973469291: "Девочка · Универсал",
     7803825182: "Мальчик · Универсал",
 }
-# Эмодзи для каждого админа (можно менять)
 ADMIN_EMOJI = {
-    7790900154: "🕊",   # Серафим
-    6354283893: "🐱",   # Киса
-    2087257865: "👑",   # Чапа
-    8275375761: "🌼",   # лютик
-    6870680424: "💰",   # цена
-    5812572110: "🖤",   # Темная
-    6698192304: "⚡",   # минерва
-    6599739238: "🌙",   # Мадока
-    7894506921: "🌿",   # добряк
-    7479469048: "😈",   # сатана
-    8973469291: "💪",   # фитоняшка
-    7803825182: "🐾",   # мурлыка
+    7790900154: "🕊", 6354283893: "🐱", 2087257865: "👑",
+    8275375761: "🌼", 6870680424: "💰", 5812572110: "🖤",
+    6698192304: "⚡", 6599739238: "🌙", 7894506921: "🌿",
+    7479469048: "😈", 8973469291: "💪", 7803825182: "🐾",
 }
 FORBIDDEN_TAGS = {"#люстра", "#зефирка2.0", "#падшая", "#тигрица"}
 
@@ -112,13 +103,12 @@ dp = Dispatcher(storage=MemoryStorage())
 user_topics = {}
 topic_to_user = {}
 chat_mode = {}
-user_admin_map = {}          # user_id -> admin_id (выбранный админ)
-admin_user_map = {}          # admin_id -> user_id
-admin_msg_to_user = {}       # (bot_id, msg_id в группе) -> user_id
-private_admin_msg_to_user = {}  # (admin_id, msg_id в ЛС) -> user_id
+user_admin_map = {}
+admin_user_map = {}
+admin_msg_to_user = {}
+private_admin_msg_to_user = {}
 user_username = {}
 user_first_name = {}
-notified_admins = {}         # admin_id -> set(user_ids), кому уже слали уведомление
 
 blocked_users = set()
 admins = set()
@@ -142,17 +132,13 @@ class ReportStates(StatesGroup):
     waiting_for_text = State()
 
 
-class ChangeStates(StatesGroup):
-    confirm = State()
-
-
 WELCOME_TEXT = (
     "🌙 Врата распахнулись — и этот секунд будто замедлил бег.\n\n"
     "🕊 «Что случилось, ангелочек мой?» — этот вопрос здесь не для галочки.\n\n"
     "💭 Здесь можно выговориться, отвлечься или просто помолчать рядом.\n\n"
     "📬 Канал: https://t.me/Yasu737\n"
     "💬 Отзывы: https://t.me/ooih865\n\n"
-    "📝 Напиши тег админа и цель: «общение» или «поддержка»."
+    "📝 Нажми «🤍 Позвать хранителя» и выбери, с кем хочешь поговорить."
 )
 
 RULES_TEXT = (
@@ -174,25 +160,52 @@ def main_menu_keyboard() -> ReplyKeyboardMarkup:
 
 
 def admins_keyboard() -> InlineKeyboardMarkup:
-    """Список всех админов с тегами и эмодзи."""
     buttons = []
-    row = []
-    for admin_id, tag in admin_tags.items():
+    for admin_id in list(admin_tags.keys()):
         if admin_id in owners or admin_id in admins:
             emoji = ADMIN_EMOJI.get(admin_id, "🛡️")
+            tag = admin_tags.get(admin_id, "—")
             role = admin_roles.get(admin_id, "")
             label = f"{emoji} {tag}"
             if role:
                 label += f" · {role}"
             if len(label) > 60:
                 label = label[:57] + "…"
-            row.append(InlineKeyboardButton(text=label, callback_data=f"pick_admin:{admin_id}"))
-            if len(row) == 1:  # по одному в ряд — длинные подписи
-                buttons.append(row)
-                row = []
-    if row:
-        buttons.append(row)
+            buttons.append([InlineKeyboardButton(text=label, callback_data=f"pick_admin:{admin_id}")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def mode_choice_keyboard(admin_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💬 Переписка в теме группы", callback_data=f"mode_group:{admin_id}")],
+        [InlineKeyboardButton(text="🤍 Переписка в ЛС бота", callback_data=f"mode_private:{admin_id}")],
+        [InlineKeyboardButton(text="🌙 Пусть админ выберет сам", callback_data=f"mode_admin:{admin_id}")],
+    ])
+
+
+def get_card_keyboard(user_id: int, mode: str) -> InlineKeyboardMarkup:
+    """4 кнопки в карточке темы: блок/прочитать + переключение режима."""
+    top = []
+    if user_id in blocked_users:
+        top.append(InlineKeyboardButton(text="🔓 Разблокировать", callback_data=f"unblock:{user_id}"))
+    else:
+        top.append(InlineKeyboardButton(text="🔒 Заблокировать", callback_data=f"block:{user_id}"))
+
+    if read_status.get(user_id):
+        top.append(InlineKeyboardButton(text="↩️ Отменить прочтение", callback_data=f"unread:{user_id}"))
+    else:
+        top.append(InlineKeyboardButton(text="✅ Прочитать", callback_data=f"read:{user_id}"))
+
+    bottom = []
+    if mode == "private":
+        bottom.append(InlineKeyboardButton(text="💬 Переключить в тему", callback_data=f"switch_group:{user_id}"))
+    elif mode == "group":
+        bottom.append(InlineKeyboardButton(text="🤍 Переключить в ЛС", callback_data=f"switch_private:{user_id}"))
+    else:
+        bottom.append(InlineKeyboardButton(text="🤍 В ЛС бота", callback_data=f"switch_private:{user_id}"))
+        bottom.append(InlineKeyboardButton(text="💬 В тему", callback_data=f"switch_group:{user_id}"))
+
+    return InlineKeyboardMarkup(inline_keyboard=[top, bottom])
 
 
 def rating_keyboard() -> InlineKeyboardMarkup:
@@ -207,21 +220,6 @@ def rating_keyboard() -> InlineKeyboardMarkup:
         buttons.append(row)
     buttons.append([InlineKeyboardButton(text="Пропустить", callback_data="rate_skip")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
-
-
-def get_keyboard(user_id: int, read: bool = False) -> InlineKeyboardMarkup:
-    if user_id in blocked_users:
-        return InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="🔓 Разблокировать", callback_data=f"unblock:{user_id}")
-        ]])
-    if read:
-        return InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="↩️ Отменить прочтение", callback_data=f"unread:{user_id}")
-        ]])
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="🔒 Заблокировать", callback_data=f"block:{user_id}"),
-        InlineKeyboardButton(text="✅ Прочитать", callback_data=f"read:{user_id}"),
-    ]])
 
 
 # ================== УТИЛИТЫ ==================
@@ -263,9 +261,9 @@ def remember_user(message: Message):
 
 def mode_label(mode: str) -> str:
     if mode == "group":
-        return "💬 в группе (в теме)"
+        return "💬 в теме группы"
     if mode == "private":
-        return "🤍 в личке с ботом"
+        return "🤍 в ЛС бота"
     if mode == "admin":
         return "🌙 админ выбирает"
     return "—"
@@ -425,8 +423,9 @@ async def cmd_users(message: Message):
         uname_str = f"@{uname}" if uname else "без юза"
         admin_id = user_admin_map.get(uid)
         admin_tag = admin_tags.get(admin_id, "—") if admin_id else "—"
+        mode = mode_label(chat_mode.get(uid, "—"))
         status = "🔒" if uid in blocked_users else ("💬" if uid in user_topics else "⚪")
-        lines.append(f"{status} <code>{uid}</code> | {uname_str} | {admin_tag}")
+        lines.append(f"{status} <code>{uid}</code> | {uname_str} | {admin_tag} | {mode}")
     await message.answer("\n".join(lines))
 
 
@@ -434,7 +433,6 @@ async def cmd_users(message: Message):
 @dp.message(Command("start"), F.chat.type == "private")
 async def cmd_start(message: Message):
     user_id = message.from_user.id
-    chat_mode.pop(user_id, None)
     remember_user(message)
     await save_data()
     msg = await message.answer(WELCOME_TEXT, reply_markup=main_menu_keyboard())
@@ -461,7 +459,8 @@ async def cmd_status(message: Message):
     if user_id in user_topics:
         admin_id = user_admin_map.get(user_id)
         tag = admin_tags.get(admin_id, "—") if admin_id else "—"
-        await message.answer(f"💬 Активный диалог.\nХранитель: <b>{tag}</b>")
+        mode = mode_label(chat_mode.get(user_id, "—"))
+        await message.answer(f"💬 Активный диалог.\nХранитель: <b>{tag}</b>\nРежим: {mode}")
     else:
         await message.answer("Нет активного диалога. Напиши /start.")
 
@@ -500,12 +499,13 @@ async def cmd_stop(message: Message):
         except Exception:
             pass
         read_status.pop(user_id, None)
+        chat_mode.pop(user_id, None)
         admin_id = user_admin_map.pop(user_id, None)
         if admin_id:
             admin_user_map.pop(admin_id, None)
         await save_data()
         await message.answer(
-            "Диалог завершён. Напиши /start и выбери нового хранителя 🤍",
+            "Диалог завершён. Нажми «🤍 Позвать хранителя», чтобы начать заново.",
             reply_markup=main_menu_keyboard(),
         )
     else:
@@ -515,7 +515,6 @@ async def cmd_stop(message: Message):
 # ================== 3. CALLBACK'И ==================
 @dp.callback_query(F.data.startswith("pick_admin:"))
 async def on_pick_admin(callback: CallbackQuery):
-    """Пользователь выбрал конкретного админа."""
     try:
         admin_id = int(callback.data.split(":")[1])
     except (IndexError, ValueError):
@@ -523,25 +522,54 @@ async def on_pick_admin(callback: CallbackQuery):
         return
 
     user_id = callback.from_user.id
+    admin_tag = admin_tags.get(admin_id, "—")
+    emoji = ADMIN_EMOJI.get(admin_id, "🛡️")
+
+    if user_id in user_topics:
+        await callback.answer(
+            "У тебя уже есть хранитель. Напиши /stop, чтобы сменить.",
+            show_alert=True,
+        )
+        return
+
+    await callback.message.edit_text(
+        f"{emoji} Ты выбрал хранителя <b>{admin_tag}</b>.\n\n"
+        f"Как хочешь общаться?",
+        reply_markup=mode_choice_keyboard(admin_id),
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data.startswith("mode_"))
+async def on_mode_choice(callback: CallbackQuery):
+    parts = callback.data.split(":")
+    if len(parts) != 2:
+        await callback.answer("Ошибка", show_alert=True)
+        return
+    mode_key, admin_id_str = parts
+    try:
+        admin_id = int(admin_id_str)
+    except ValueError:
+        await callback.answer("Ошибка", show_alert=True)
+        return
+
+    mode_map = {
+        "mode_group": "group",
+        "mode_private": "private",
+        "mode_admin": "admin",
+    }
+    mode = mode_map.get(mode_key, "admin")
+
+    user_id = callback.from_user.id
     username = user_username.get(user_id) or callback.from_user.username or f"id{user_id}"
     fname = user_first_name.get(user_id, "")
     admin_tag = admin_tags.get(admin_id, "—")
     emoji = ADMIN_EMOJI.get(admin_id, "🛡️")
 
-    # Уже есть активный диалог?
     if user_id in user_topics:
-        old_admin = user_admin_map.get(user_id)
-        if old_admin == admin_id:
-            await callback.answer(f"Ты уже с {admin_tag}", show_alert=True)
-            return
-        else:
-            await callback.answer(
-                "У тебя уже есть хранитель. Напиши /stop, чтобы сменить.",
-                show_alert=True,
-            )
-            return
+        await callback.answer("У тебя уже есть активный диалог.", show_alert=True)
+        return
 
-    # Создаём тему в группе
     topic_name = f"@{username} · {admin_tag}"
     try:
         new_topic = await bot.create_forum_topic(chat_id=GROUP_ID, name=topic_name)
@@ -552,48 +580,58 @@ async def on_pick_admin(callback: CallbackQuery):
         await callback.answer()
         return
 
-    # Связки
     user_topics[user_id] = new_topic_id
     topic_to_user[new_topic_id] = user_id
     user_admin_map[user_id] = admin_id
     admin_user_map[admin_id] = user_id
+    chat_mode[user_id] = mode
     read_status[user_id] = False
     await save_data()
 
-    # Карточка в теме
+    mode_str = mode_label(mode)
     card = (
         f"👤 <b>Пользователь</b>\n"
         f"  ID: <code>{user_id}</code>\n"
         f"  Username: @{username}\n"
         f"  Имя: {fname}\n"
-        f"🎯 Хранитель: <b>{admin_tag}</b>"
+        f"🎯 Хранитель: <b>{admin_tag}</b>\n"
+        f"💬 Режим: <b>{mode_str}</b>"
     )
     try:
         sent = await bot.send_message(
             GROUP_ID, card, message_thread_id=new_topic_id,
-            reply_markup=get_keyboard(user_id)
+            reply_markup=get_card_keyboard(user_id, mode),
         )
         card_texts[sent.message_id] = card
     except Exception as e:
         logging.error(f"Не удалось отправить карточку: {e}")
 
-    # Отвечаем пользователю
-    await callback.message.edit_text(
-        f"{emoji} Тебя соединили с хранителем <b>{admin_tag}</b>.\n\n"
-        f"Напиши сообщение — и он ответит 🤍"
-    )
+    if mode == "private":
+        await callback.message.edit_text(
+            f"{emoji} Ты соединился с <b>{admin_tag}</b> 🤍\n\n"
+            f"Пиши сообщения — они уйдут лично хранителю."
+        )
+    elif mode == "group":
+        await callback.message.edit_text(
+            f"{emoji} Ты соединился с <b>{admin_tag}</b> 💬\n\n"
+            f"Пиши сообщения — они уйдут в тему группы."
+        )
+    else:
+        await callback.message.edit_text(
+            f"{emoji} Ты выбрал хранителя <b>{admin_tag}</b> 🌙\n\n"
+            f"Он сам выберет, как с тобой общаться."
+        )
     await callback.answer()
 
-    # Уведомление ТОЛЬКО выбранному админу в ЛС бота
     notif = (
         f"🔔 <b>Новый пользователь!</b>\n"
         f"👤 @{username} (<code>{user_id}</code>)\n"
         f"📛 {fname}\n"
-        f"🎯 Тег: {admin_tag}"
+        f"🎯 Тег: {admin_tag}\n"
+        f"💬 Режим: <b>{mode_str}</b>"
     )
     try:
         notif_msg = await bot.send_message(admin_id, notif)
-        # Запоминаем, чтобы админ мог reply-нуть и отправить юзеру
         private_admin_msg_to_user[(admin_id, notif_msg.message_id)] = user_id
     except Exception as e:
         logging.error(f"Не удалось уведомить админа {admin_id}: {e}")
@@ -608,8 +646,9 @@ async def on_block(callback: CallbackQuery):
         return
     blocked_users.add(user_id)
     await save_data()
+    mode = chat_mode.get(user_id, "admin")
     try:
-        await callback.message.edit_reply_markup(reply_markup=get_keyboard(user_id))
+        await callback.message.edit_reply_markup(reply_markup=get_card_keyboard(user_id, mode))
     except Exception:
         pass
     await callback.answer("Заблокирован ✅")
@@ -624,8 +663,9 @@ async def on_unblock(callback: CallbackQuery):
         return
     blocked_users.discard(user_id)
     await save_data()
+    mode = chat_mode.get(user_id, "admin")
     try:
-        await callback.message.edit_reply_markup(reply_markup=get_keyboard(user_id))
+        await callback.message.edit_reply_markup(reply_markup=get_card_keyboard(user_id, mode))
     except Exception:
         pass
     await callback.answer("Разблокирован 🔓")
@@ -640,8 +680,9 @@ async def on_read(callback: CallbackQuery):
         return
     read_status[user_id] = True
     await save_data()
+    mode = chat_mode.get(user_id, "admin")
     try:
-        await callback.message.edit_reply_markup(reply_markup=get_keyboard(user_id, read=True))
+        await callback.message.edit_reply_markup(reply_markup=get_card_keyboard(user_id, mode))
     except Exception:
         pass
     await callback.answer("Отмечено ✅")
@@ -656,11 +697,52 @@ async def on_unread(callback: CallbackQuery):
         return
     read_status[user_id] = False
     await save_data()
+    mode = chat_mode.get(user_id, "admin")
     try:
-        await callback.message.edit_reply_markup(reply_markup=get_keyboard(user_id))
+        await callback.message.edit_reply_markup(reply_markup=get_card_keyboard(user_id, mode))
     except Exception:
         pass
     await callback.answer("Отменено ↩️")
+
+
+@dp.callback_query(F.data.startswith("switch_private:"))
+async def on_switch_private(callback: CallbackQuery):
+    try:
+        user_id = int(callback.data.split(":")[1])
+    except (IndexError, ValueError):
+        await callback.answer("Ошибка", show_alert=True)
+        return
+    chat_mode[user_id] = "private"
+    await save_data()
+    try:
+        await callback.message.edit_reply_markup(reply_markup=get_card_keyboard(user_id, "private"))
+    except Exception:
+        pass
+    await callback.answer("🤍 Режим: ЛС бота")
+    try:
+        await bot.send_message(user_id, "💬 Хранитель переключил переписку в ЛС бота 🤍")
+    except Exception:
+        pass
+
+
+@dp.callback_query(F.data.startswith("switch_group:"))
+async def on_switch_group(callback: CallbackQuery):
+    try:
+        user_id = int(callback.data.split(":")[1])
+    except (IndexError, ValueError):
+        await callback.answer("Ошибка", show_alert=True)
+        return
+    chat_mode[user_id] = "group"
+    await save_data()
+    try:
+        await callback.message.edit_reply_markup(reply_markup=get_card_keyboard(user_id, "group"))
+    except Exception:
+        pass
+    await callback.answer("💬 Режим: тема группы")
+    try:
+        await bot.send_message(user_id, "💬 Хранитель переключил переписку в тему группы.")
+    except Exception:
+        pass
 
 
 @dp.callback_query(F.data.startswith("rate_"))
@@ -670,7 +752,7 @@ async def on_rate(callback: CallbackQuery):
     await callback.answer()
 
 
-# ================== 4. КОМАНДЫ ГРУППЫ ==================
+# ================== 4. ГРУППА ==================
 @dp.message(Command("help"), F.chat.id == GROUP_ID)
 async def cmd_help_group(message: Message):
     await message.answer(
@@ -701,11 +783,13 @@ async def cmd_who_group(message: Message):
     uname = user_username.get(uid, "—")
     admin_id = user_admin_map.get(uid)
     admin_tag = admin_tags.get(admin_id, "—") if admin_id else "—"
+    mode = mode_label(chat_mode.get(uid, "—"))
     await message.answer(
         f"👤 Пользователь:\n"
         f"  ID: <code>{uid}</code>\n"
         f"  Username: @{uname}\n"
-        f"  Хранитель: {admin_tag}"
+        f"  Хранитель: {admin_tag}\n"
+        f"  Режим: {mode}"
     )
 
 
@@ -725,6 +809,7 @@ async def cmd_close(message: Message):
         user_topics.pop(user_id, None)
         topic_to_user.pop(topic_id, None)
         read_status.pop(user_id, None)
+        chat_mode.pop(user_id, None)
         admin_id = user_admin_map.pop(user_id, None)
         if admin_id:
             admin_user_map.pop(admin_id, None)
@@ -891,7 +976,6 @@ async def btn_call_keeper(message: Message, state: FSMContext):
         await message.answer(f"🔇 Мут до {mutes[user_id].strftime('%H:%M')}")
         return
 
-    # Уже есть активный диалог?
     if user_id in user_topics:
         admin_id = user_admin_map.get(user_id)
         tag = admin_tags.get(admin_id, "—") if admin_id else "—"
@@ -914,8 +998,14 @@ async def btn_small_talk(message: Message, state: FSMContext):
     remember_user(message)
     await save_data()
 
+    if user_id in user_topics:
+        admin_id = user_admin_map.get(user_id)
+        tag = admin_tags.get(admin_id, "—") if admin_id else "—"
+        await message.answer(f"У тебя уже есть хранитель <b>{tag}</b>. Напиши /stop, чтобы сменить.")
+        return
+
     await message.answer(
-        "🌸 О чём хочешь поболтать? Выбери хранителя 👇",
+        "🌸 Выбери хранителя 👇",
         reply_markup=admins_keyboard(),
     )
 
@@ -925,13 +1015,13 @@ async def btn_rules(message: Message):
     await message.answer(RULES_TEXT)
 
 
-# ================== 6. ЛИЧКА — ОБЩИЙ ПРИЁМ ==================
+# ================== 6. ЛИЧКА ==================
 @dp.message(F.chat.type == "private")
 async def handle_private(message: Message, state: FSMContext):
     user_id = message.from_user.id
     remember_user(message)
 
-    # ==== АДМИН в личке — отвечает реплаем на уведомление ====
+    # ==== АДМИН ====
     if is_admin(user_id):
         if message.reply_to_message:
             key = (user_id, message.reply_to_message.message_id)
@@ -954,16 +1044,15 @@ async def handle_private(message: Message, state: FSMContext):
                         await bot.send_sticker(target_user, message.sticker.file_id)
                     await message.answer("✅ Отправлено пользователю.")
                 except Exception as e:
-                    logging.error(f"Ошибка пересылки пользователю: {e}")
-                    await message.answer("⚠️ Не удалось отправить пользователю.")
+                    logging.error(f"Ошибка пересылки: {e}")
+                    await message.answer("⚠️ Не удалось отправить.")
                 return
         await message.answer(
-            "⚠️ Чтобы ответить пользователю — сделай reply на его сообщение "
-            "и напиши ответ."
+            "⚠️ Чтобы ответить пользователю — сделай reply на его сообщение."
         )
         return
 
-    # ==== ОБЫЧНЫЙ ПОЛЬЗОВАТЕЛЬ ====
+    # ==== ПОЛЬЗОВАТЕЛЬ ====
     if user_id in blocked_users:
         await message.answer("🚫 Ты заблокирован.")
         return
@@ -971,7 +1060,6 @@ async def handle_private(message: Message, state: FSMContext):
         await message.answer(f"🔇 Мут до {mutes[user_id].strftime('%H:%M')}")
         return
 
-    # Нет активного диалога — не перенаправляем
     if user_id not in user_topics:
         await message.answer(
             "Привет! Нажми «🤍 Позвать хранителя», чтобы начать 🤍",
@@ -980,17 +1068,20 @@ async def handle_private(message: Message, state: FSMContext):
         await save_data()
         return
 
-    # Есть активный диалог — пересылаем в тему + уведомляем выбранного админа
     topic_id = user_topics.get(user_id)
-    if topic_id:
+    admin_id = user_admin_map.get(user_id)
+    mode = chat_mode.get(user_id, "admin")
+
+    # Режим "в теме" — пересылаем в тему группы
+    if mode == "group" and topic_id:
         try:
             sent = await message.forward(chat_id=GROUP_ID, message_thread_id=topic_id)
             admin_msg_to_user[(bot.id, sent.message_id)] = user_id
         except Exception as e:
             logging.error(f"Не удалось переслать в тему: {e}")
 
-    admin_id = user_admin_map.get(user_id)
-    if admin_id:
+    # Режим "в ЛС" или "админ сам" — пересылаем админу в ЛС
+    if mode in ("private", "admin") and admin_id:
         try:
             forwarded = await message.forward(admin_id)
             private_admin_msg_to_user[(admin_id, forwarded.message_id)] = user_id
@@ -1069,7 +1160,7 @@ async def main():
     finally:
         await bot.session.close()
         await runner.cleanup()
-        logging.info("🔒 Сессии закрыты, бот остановлен.")
+        logging.info("🔒 Сессии закрыты.")
 
 
 if __name__ == "__main__":
