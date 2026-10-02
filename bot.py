@@ -105,7 +105,7 @@ ADMIN_GREETINGS = {
     ),
 }
 
-bot = Bot(token=BOT_TOKEN)
+bot = Bot(token=BOT_TOKEN, parse_mode="HTML")
 dp = Dispatcher(storage=MemoryStorage())
 
 # ================== ХРАНИЛИЩА ==================
@@ -114,10 +114,8 @@ topic_to_user = {}
 chat_mode = {}
 user_admin_map = {}
 admin_user_map = {}
-# Ключ: message_id сообщения бота в группе (в теме) → user_id
-# message_id сообщения бота в ЛС админа → user_id
-admin_msg_to_user = {}
-private_admin_msg_to_user = {}
+admin_msg_to_user = {}          # message_id в группе -> user_id
+private_admin_msg_to_user = {}  # (admin_id, message_id в ЛС) -> user_id
 user_username = {}
 user_first_name = {}
 user_category = {}
@@ -131,13 +129,6 @@ mutes = {}
 admin_tags = {}
 admin_roles = {}
 read_status = {}
-
-reminders = {}
-frozen_topics = {}
-topic_history = {}
-waiting_admin_replied = {}
-user_temp_messages = {}
-card_texts = {}
 
 
 class ReportStates(StatesGroup):
@@ -311,13 +302,13 @@ def find_admin_for_category(cat_key: str):
 
 
 async def send_user_message_to_topic(user_id: int, message: Message, topic_id: int):
-    """
-    Отправляет сообщение пользователя в тему от имени БОТА (как будто бот пишет).
-    Возвращает message_id отправленного сообщения, либо None при ошибке.
-    """
+    """Отправляет сообщение пользователя в тему от имени БОТА."""
     uname = user_username.get(user_id)
     fname = user_first_name.get(user_id, "")
-    header = f"👤 <b>@{uname}</b> (<code>{user_id}</code>)" if uname else f"👤 <code>{user_id}</code>"
+    if uname:
+        header = f"👤 <b>@{uname}</b> (<code>{user_id}</code>)"
+    else:
+        header = f"👤 <b>без юза</b> (<code>{user_id}</code>)"
     if fname:
         header += f" — {fname}"
 
@@ -327,6 +318,7 @@ async def send_user_message_to_topic(user_id: int, message: Message, topic_id: i
                 GROUP_ID,
                 f"{header}\n\n{message.text}",
                 message_thread_id=topic_id,
+                parse_mode="HTML",
             )
         elif message.photo:
             sent = await bot.send_photo(
@@ -334,42 +326,46 @@ async def send_user_message_to_topic(user_id: int, message: Message, topic_id: i
                 message.photo[-1].file_id,
                 caption=f"{header}\n\n{message.caption or ''}".strip(),
                 message_thread_id=topic_id,
+                parse_mode="HTML",
             )
         elif message.voice:
             sent = await bot.send_voice(
                 GROUP_ID, message.voice.file_id,
                 caption=header,
                 message_thread_id=topic_id,
+                parse_mode="HTML",
             )
         elif message.video_note:
             sent = await bot.send_video_note(
                 GROUP_ID, message.video_note.file_id,
                 message_thread_id=topic_id,
             )
-            # Подпись отдельным сообщением
-            await bot.send_message(GROUP_ID, header, message_thread_id=topic_id)
+            await bot.send_message(GROUP_ID, header, message_thread_id=topic_id, parse_mode="HTML")
         elif message.video:
             sent = await bot.send_video(
                 GROUP_ID, message.video.file_id,
                 caption=f"{header}\n\n{message.caption or ''}".strip(),
                 message_thread_id=topic_id,
+                parse_mode="HTML",
             )
         elif message.document:
             sent = await bot.send_document(
                 GROUP_ID, message.document.file_id,
                 caption=f"{header}\n\n{message.caption or ''}".strip(),
                 message_thread_id=topic_id,
+                parse_mode="HTML",
             )
         elif message.sticker:
             sent = await bot.send_sticker(
                 GROUP_ID, message.sticker.file_id,
                 message_thread_id=topic_id,
             )
-            await bot.send_message(GROUP_ID, header, message_thread_id=topic_id)
+            await bot.send_message(GROUP_ID, header, message_thread_id=topic_id, parse_mode="HTML")
         else:
             sent = await bot.send_message(
                 GROUP_ID, f"{header}\n\n[медиа]",
                 message_thread_id=topic_id,
+                parse_mode="HTML",
             )
         return sent.message_id
     except Exception as e:
@@ -755,6 +751,7 @@ async def on_mode_choice(callback: CallbackQuery):
         sent = await bot.send_message(
             GROUP_ID, card, message_thread_id=new_topic_id,
             reply_markup=get_card_keyboard(user_id, mode),
+            parse_mode="HTML",
         )
         card_texts[sent.message_id] = card
     except Exception as e:
@@ -787,7 +784,7 @@ async def on_mode_choice(callback: CallbackQuery):
             f"💬 Режим: <b>{mode_str}</b>"
         )
         try:
-            notif_msg = await bot.send_message(admin_id, notif)
+            notif_msg = await bot.send_message(admin_id, notif, parse_mode="HTML")
             private_admin_msg_to_user[(admin_id, notif_msg.message_id)] = user_id
         except Exception as e:
             logging.error(f"Не удалось уведомить админа {admin_id}: {e}")
@@ -1186,7 +1183,7 @@ async def handle_private(message: Message, state: FSMContext):
             if target_user is not None:
                 try:
                     if message.text:
-                        await bot.send_message(target_user, message.text)
+                        await bot.send_message(target_user, message.text, parse_mode="HTML")
                     elif message.voice:
                         await bot.send_voice(target_user, message.voice.file_id)
                     elif message.video_note:
@@ -1233,7 +1230,6 @@ async def handle_private(message: Message, state: FSMContext):
     if mode == "group" and topic_id:
         sent_id = await send_user_message_to_topic(user_id, message, topic_id)
         if sent_id is not None:
-            # Ключ — message_id сообщения в группе → user_id
             admin_msg_to_user[sent_id] = user_id
 
     # В ЛС БОТА или АДМИН САМ — пересылаем админу в ЛС
@@ -1253,31 +1249,36 @@ async def handle_group(message: Message):
     if message.from_user.id not in admins and message.from_user.id not in owners:
         return
 
-    if message.reply_to_message:
-        # Ключ — message_id того сообщения в группе, на которое отвечают
-        key = message.reply_to_message.message_id
-        target_user = admin_msg_to_user.get(key)
-        if target_user is not None:
-            try:
-                if message.text:
-                    await bot.send_message(target_user, message.text)
-                elif message.voice:
-                    await bot.send_voice(target_user, message.voice.file_id)
-                elif message.video_note:
-                    await bot.send_video_note(target_user, message.video_note.file_id)
-                elif message.video:
-                    await bot.send_video(target_user, message.video.file_id)
-                elif message.photo:
-                    await bot.send_photo(target_user, message.photo[-1].file_id)
-                elif message.document:
-                    await bot.send_document(target_user, message.document.file_id)
-                elif message.sticker:
-                    await bot.send_sticker(target_user, message.sticker.file_id)
-                await message.reply("✅ Отправлено пользователю.")
-            except Exception as e:
-                logging.error(f"Ошибка ответа из темы: {e}")
-                await message.reply("⚠️ Не удалось отправить.")
-            return
+    if not message.reply_to_message:
+        return
+
+    # message.reply_to_message.message_id — ID сообщения, на которое отвечают.
+    # Мы записали его в admin_msg_to_user[sent_id] = user_id
+    key = message.reply_to_message.message_id
+    target_user = admin_msg_to_user.get(key)
+
+    if target_user is None:
+        return
+
+    try:
+        if message.text:
+            await bot.send_message(target_user, message.text, parse_mode="HTML")
+        elif message.voice:
+            await bot.send_voice(target_user, message.voice.file_id)
+        elif message.video_note:
+            await bot.send_video_note(target_user, message.video_note.file_id)
+        elif message.video:
+            await bot.send_video(target_user, message.video.file_id)
+        elif message.photo:
+            await bot.send_photo(target_user, message.photo[-1].file_id)
+        elif message.document:
+            await bot.send_document(target_user, message.document.file_id)
+        elif message.sticker:
+            await bot.send_sticker(target_user, message.sticker.file_id)
+        await message.reply("✅ Отправлено пользователю.")
+    except Exception as e:
+        logging.error(f"Ошибка ответа из темы: {e}")
+        await message.reply("⚠️ Не удалось отправить.")
 
 
 # ================== ЗАПУСК ==================
