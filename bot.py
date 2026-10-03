@@ -8,6 +8,7 @@ import aiohttp
 from aiohttp import web
 
 from aiogram import Bot, Dispatcher, F
+from aiogram.client.default import DefaultBotProperties
 from aiogram.filters import Command
 from aiogram.types import (
     Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton,
@@ -105,7 +106,8 @@ ADMIN_GREETINGS = {
     ),
 }
 
-bot = Bot(token=BOT_TOKEN, parse_mode="HTML")
+# ✅ Правильный способ в aiogram 3.7+
+bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
 dp = Dispatcher(storage=MemoryStorage())
 
 # ================== ХРАНИЛИЩА ==================
@@ -318,7 +320,6 @@ async def send_user_message_to_topic(user_id: int, message: Message, topic_id: i
                 GROUP_ID,
                 f"{header}\n\n{message.text}",
                 message_thread_id=topic_id,
-                parse_mode="HTML",
             )
         elif message.photo:
             sent = await bot.send_photo(
@@ -326,46 +327,41 @@ async def send_user_message_to_topic(user_id: int, message: Message, topic_id: i
                 message.photo[-1].file_id,
                 caption=f"{header}\n\n{message.caption or ''}".strip(),
                 message_thread_id=topic_id,
-                parse_mode="HTML",
             )
         elif message.voice:
             sent = await bot.send_voice(
                 GROUP_ID, message.voice.file_id,
                 caption=header,
                 message_thread_id=topic_id,
-                parse_mode="HTML",
             )
         elif message.video_note:
             sent = await bot.send_video_note(
                 GROUP_ID, message.video_note.file_id,
                 message_thread_id=topic_id,
             )
-            await bot.send_message(GROUP_ID, header, message_thread_id=topic_id, parse_mode="HTML")
+            await bot.send_message(GROUP_ID, header, message_thread_id=topic_id)
         elif message.video:
             sent = await bot.send_video(
                 GROUP_ID, message.video.file_id,
                 caption=f"{header}\n\n{message.caption or ''}".strip(),
                 message_thread_id=topic_id,
-                parse_mode="HTML",
             )
         elif message.document:
             sent = await bot.send_document(
                 GROUP_ID, message.document.file_id,
                 caption=f"{header}\n\n{message.caption or ''}".strip(),
                 message_thread_id=topic_id,
-                parse_mode="HTML",
             )
         elif message.sticker:
             sent = await bot.send_sticker(
                 GROUP_ID, message.sticker.file_id,
                 message_thread_id=topic_id,
             )
-            await bot.send_message(GROUP_ID, header, message_thread_id=topic_id, parse_mode="HTML")
+            await bot.send_message(GROUP_ID, header, message_thread_id=topic_id)
         else:
             sent = await bot.send_message(
                 GROUP_ID, f"{header}\n\n[медиа]",
                 message_thread_id=topic_id,
-                parse_mode="HTML",
             )
         return sent.message_id
     except Exception as e:
@@ -751,7 +747,6 @@ async def on_mode_choice(callback: CallbackQuery):
         sent = await bot.send_message(
             GROUP_ID, card, message_thread_id=new_topic_id,
             reply_markup=get_card_keyboard(user_id, mode),
-            parse_mode="HTML",
         )
         card_texts[sent.message_id] = card
     except Exception as e:
@@ -784,7 +779,7 @@ async def on_mode_choice(callback: CallbackQuery):
             f"💬 Режим: <b>{mode_str}</b>"
         )
         try:
-            notif_msg = await bot.send_message(admin_id, notif, parse_mode="HTML")
+            notif_msg = await bot.send_message(admin_id, notif)
             private_admin_msg_to_user[(admin_id, notif_msg.message_id)] = user_id
         except Exception as e:
             logging.error(f"Не удалось уведомить админа {admin_id}: {e}")
@@ -1183,7 +1178,7 @@ async def handle_private(message: Message, state: FSMContext):
             if target_user is not None:
                 try:
                     if message.text:
-                        await bot.send_message(target_user, message.text, parse_mode="HTML")
+                        await bot.send_message(target_user, message.text)
                     elif message.voice:
                         await bot.send_voice(target_user, message.voice.file_id)
                     elif message.video_note:
@@ -1226,13 +1221,11 @@ async def handle_private(message: Message, state: FSMContext):
     admin_id = user_admin_map.get(user_id)
     mode = chat_mode.get(user_id, "admin")
 
-    # В ТЕМЕ — отправляем как будто бот пишет от своего имени
     if mode == "group" and topic_id:
         sent_id = await send_user_message_to_topic(user_id, message, topic_id)
         if sent_id is not None:
             admin_msg_to_user[sent_id] = user_id
 
-    # В ЛС БОТА или АДМИН САМ — пересылаем админу в ЛС
     if mode in ("private", "admin") and admin_id:
         try:
             forwarded = await message.forward(admin_id)
@@ -1252,8 +1245,6 @@ async def handle_group(message: Message):
     if not message.reply_to_message:
         return
 
-    # message.reply_to_message.message_id — ID сообщения, на которое отвечают.
-    # Мы записали его в admin_msg_to_user[sent_id] = user_id
     key = message.reply_to_message.message_id
     target_user = admin_msg_to_user.get(key)
 
@@ -1262,7 +1253,7 @@ async def handle_group(message: Message):
 
     try:
         if message.text:
-            await bot.send_message(target_user, message.text, parse_mode="HTML")
+            await bot.send_message(target_user, message.text)
         elif message.voice:
             await bot.send_voice(target_user, message.voice.file_id)
         elif message.video_note:
